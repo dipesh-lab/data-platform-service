@@ -1,0 +1,43 @@
+micronaut:
+  application:
+    name: event-processor
+  server:
+    port: 8082
+
+kafka:
+  enabled: true
+  bootstrap:
+    servers: localhost:9092
+  reconnect.backoff.max.ms: 1000
+  reconnect.backoff.ms: 50
+  retry.backoff.max.ms: 1000
+  retry.backoff.ms: 100
+
+  consumers:
+    default:
+      auto.commit.interval.ms: 100
+
+  executors:
+    consumer:
+      default:
+        allow.auto.create.topics: false
+      type: fixed
+      nThreads: 10
+
+  streams:
+    default:
+      application.id: "dp-data-process-app"
+      processing.guarantee: "exactly_once_v2"
+      commit.interval.ms: 100
+      producer.transaction.timeout.ms: 60000
+      session.timeout.ms: 45000
+      heartbeat.interval.ms: 3000
+      num.stream.threads: 1
+      max.poll.records: 1
+      auto.offset.reset: "earliest"
+      state.dir: "/tmp/kafka-streams/dp-data-process-app"
+
+app:
+  platform:
+    data:
+      folderPath: "file:///home/tom/Downloads/tmpdata/dpwarehouse"
