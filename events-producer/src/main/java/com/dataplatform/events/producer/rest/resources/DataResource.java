@@ -1,7 +1,7 @@
 package com.dataplatform.events.producer.rest.resources;
 
 import com.dataplatform.events.producer.clients.DPEventClient;
-import com.dataplatform.events.producer.models.UserEvent;
+import com.dataplatform.events.producer.models.DataEvent;
 import io.micronaut.http.HttpResponse;
 import io.micronaut.http.annotation.Controller;
 import io.micronaut.http.annotation.Get;
@@ -9,9 +9,10 @@ import io.micronaut.http.annotation.QueryValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
-import java.util.UUID;
 import java.util.stream.IntStream;
 
 @Controller("/events/generate")
@@ -36,14 +37,12 @@ public class DataResource {
         IntStream.iterate(0, i -> i + 1).limit(eventCount).forEach(i -> {
             var accountId = accountIds.get(random.nextInt(3));
             var userId = userIds.get(random.nextInt(5));
-            var event = UserEvent.builder()
-                    .eventId(UUID.randomUUID().toString())
-                    .accountId(accountId)
-                    .userId(userId)
-                    .type("REST.GET.PRODUCTS")
-                    .result("SUCCESS")
-                    .error("")
-                    .eventTime(time + i)
+            var event = DataEvent.builder()
+                    .namespace("IdentityPlatform")
+                    .tenantId(accountId)
+                    .type("app_events")
+                    .eventTime(Instant.now())
+                    .attributes(Map.of("user_id", userId, "op_type", "Api.GetIntegrations", "result", "SUCCESS"))
                     .build();
             eventClient.generateAppEvent(accountId, event).subscribe();
         });
