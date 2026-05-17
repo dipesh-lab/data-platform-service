@@ -1,0 +1,23 @@
+{
+  "tableName": "incident_events",
+  "bucketName": "incident-events",
+  "partitionType": "DAY",
+  "fields": [
+    {
+      "name": "user_id",
+      "dataType": "STRING"
+    },
+    {
+      "name": "source",
+      "dataType": "STRING"
+    },
+    {
+      "name": "ipaddress",
+      "dataType": "STRING"
+    },
+    {
+      "name": "result",
+      "dataType": "STRING"
+    }
+  ]
+}

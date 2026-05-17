@@ -4,29 +4,38 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
-        <groupId>io.micronaut.platform</groupId>
-        <artifactId>micronaut-parent</artifactId>
-        <version>4.10.13</version>
+        <groupId>com.dataplatform</groupId>
+        <artifactId>data-platform-service</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
     </parent>
 
-    <groupId>com.dataplatform</groupId>
     <artifactId>events-processor</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <properties>
-        <micronaut.version>${project.parent.version}</micronaut.version>
-        <micronaut.aot.enabled>false</micronaut.aot.enabled>
-        <micronaut.runtime>netty</micronaut.runtime>
-        <micronaut.aot.packageName>com.dataplatform.events.processor.aot.generated</micronaut.aot.packageName>
-        <exec.mainClass>com.dataplatform.events.processor.Application</exec.mainClass>
-
-        <iceberg-core.version>1.10.1</iceberg-core.version>
-        <parquet-column.version>1.16.0</parquet-column.version>
-        <lombok.version>1.18.36</lombok.version>
-        <ulid-creator.version>5.2.4</ulid-creator.version>
-        <jackson-jsr310.version>2.21.2</jackson-jsr310.version>
+        <micronaut.aot.packageName>com.dataplatform.processor.aot.generated</micronaut.aot.packageName>
+        <exec.mainClass>com.dataplatform.processor.Application</exec.mainClass>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${awssdk.verion}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.micronaut.platform</groupId>
+                <artifactId>micronaut-platform</artifactId>
+                <version>${micronaut.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <dependency>
@@ -69,8 +78,6 @@
             <version>${ulid-creator.version}</version>
             <scope>compile</scope>
         </dependency>
-
-
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
@@ -84,7 +91,6 @@
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
-            <version>${lombok.version}</version>
             <scope>provided</scope>
         </dependency>
 
@@ -112,6 +118,11 @@
             <groupId>org.apache.hadoop</groupId>
             <artifactId>hadoop-common</artifactId>
             <version>3.5.0</version> <!-- Use the version matching your cluster -->
+        </dependency>
+
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>glue</artifactId>
         </dependency>
 
         <dependency>
@@ -146,12 +157,11 @@
                         <path>
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>
-                            <version>${lombok.version}</version>
                         </path>
                         <path>
                             <groupId>io.micronaut</groupId>
                             <artifactId>micronaut-http-validation</artifactId>
-                            <version>${micronaut.core.version}</version>
+                            <version>${micronaut-http-validation.version}</version>
                         </path>
                         <path>
                             <groupId>io.micronaut.serde</groupId>

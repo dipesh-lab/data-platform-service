@@ -1,4 +1,11 @@
 target/
+dependency-reduced-pom.xml
+
+# Terraform
+**/.terraform/
+*.tfplan
+deployment.plan
+
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
@@ -22,6 +29,12 @@ target/
 .settings
 .springBeans
 .sts4-cache
+
+
+**/.terraform/
+*.tfplan
+*.plan
+dependency-reduced-pom.xml
 
 ### NetBeans ###
 /nbproject/private/

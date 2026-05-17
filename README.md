@@ -1,5 +1,21 @@
 # data-platform-service
 
+Data platform for streaming events into **Apache Iceberg** tables registered in the **AWS Glue Data Catalog**, with data files stored in **S3**.
+
+### Iceberg, Glue, S3 buckets, and metadata
+
+1. **Schema definitions** — Under [`catalog-data/`](catalog-data/), each subfolder is a Glue **namespace** (for example `global`, `fraud-detection`). Each `*.json` file describes one event type: Iceberg **table name**, S3 **bucket suffix** (`bucketName`), partition strategy, and column fields.
+
+2. **S3 buckets (Terraform)** — [`infrastructure/terraform/events-data-bucket.tf`](infrastructure/terraform/events-data-bucket.tf) scans `catalog-data` and creates one bucket per schema, named `{namespace}-{bucketName}` (for example `global-api-events`). Bucket policies allow the Glue catalog IAM role to read and write objects.
+
+3. **Glue catalog and Iceberg table metadata** — The **infrastructure** module (`AWSGlueCatalogServiceImpl`, invoked from `CatalogSchemaHandler` Lambda or locally) reads the same JSON files and uses Iceberg’s **GlueCatalog** with **S3FileIO**. It creates the Glue database (namespace) if needed, then creates the Iceberg table and initial metadata under `s3://{namespace}-{eventName}/` so engines such as Athena or QuickSight can discover the table.
+
+4. **Runtime data and commits** — **events-processor** stages Parquet files under the table location, then **appends** new data files to the Iceberg table (snapshot metadata) when commit events are processed on the `dp-commit-raw-data-events` Kafka topic.
+
+Provision buckets with Terraform first, apply catalog schemas, then run the processor so file writes and metadata commits stay aligned with the Glue catalog.
+
+---
+
 Maven multi-module project for the data platform event pipeline.
 
 ## Modules
@@ -8,6 +24,7 @@ Maven multi-module project for the data platform event pipeline.
 |--------|------|
 | **events-processor** | Main Micronaut application: Kafka Streams topology (ingest and group raw events), Kafka consumers, and persistence logic. Run this for normal processing. |
 | **events-producer** | Companion Micronaut app for local testing: HTTP API that publishes sample events to Kafka (not required for production). |
+| **infrastructure** | Shaded JAR for catalog setup: applies `catalog-data` schemas to AWS Glue / Iceberg and is deployed via Terraform (S3 buckets, IAM, Lambda). |
 
 ## Prerequisites
 
@@ -136,3 +153,25 @@ After the producer starts, paste lines such as:
 ```
 
 Then stop the producer with **Ctrl+C** when finished.
+
+
+### Get session token
+
+```
+export AWS_ACCESS_KEY_ID=
+export AWS_SECRET_ACCESS_KEY=
+export AWS_SESSION_TOKEN=**
+```
+
+```aws sts get-session-token --duration-seconds 3600
+```
+
+``terraform init -backend-config 'region=ap-southeast-2' -backend-config 'bucket=tfstate-resources-128779316957-ap-southeast-2-an' -lock=true``
+
+### Setup workspace
+``terraform workspace list``
+``terraform workspace select dev``
+``terraform workspace new dev``
+
+### Plan resources
+``terraform plan -var-file tfvars/dev.tfvars -out deployment.plan``
