@@ -23,7 +23,8 @@ import org.apache.iceberg.types.Types;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.util.*;
+import java.util.Map;
+import java.util.ArrayList;
 
 import static org.apache.iceberg.types.Types.NestedField.required;
 
@@ -34,15 +35,6 @@ public class AWSGlueCatalogServiceImpl implements CatalogSchemaService {
 
     public AWSGlueCatalogServiceImpl(CatalogConfig catalogConfig) {
         this.catalogConfig = catalogConfig;
-    }
-
-    public static void main(String[] arg) throws IOException {
-        var config = new CatalogConfig("ap-southeast-2",
-                "/home/tom/projects/javaworkspace/data-platform-service/catalog-data",
-                "arn:aws:iam::128779316957:role/dp-glue-catalog-role-dev");
-        var service = new AWSGlueCatalogServiceImpl(config);
-
-        service.applySchema(new ApplySchema("global", "api-events"));
     }
 
     @Override
@@ -67,7 +59,7 @@ public class AWSGlueCatalogServiceImpl implements CatalogSchemaService {
                             "client.region", catalogConfig.region()
                     )
             );
-
+            log.info("Glue catalog initialized");
             var namespaceObj = Namespace.of(applySchema.namespace());
             createNamespaceIfNotExist(namespaceObj, catalog);
             var schemaObj = readSchema(schemaFile);
@@ -78,18 +70,23 @@ public class AWSGlueCatalogServiceImpl implements CatalogSchemaService {
 
     private void createNamespaceIfNotExist(Namespace namespace, GlueCatalog catalog) {
         if (!catalog.namespaceExists(namespace)) {
-            log.info("Namespace with name {} not exist hence creating it", namespace.level(0));
+            log.info("Namespace with name [{}] not exist hence creating it", namespace.level(0));
             catalog.createNamespace(namespace, Map.of());
+            log.info("Namespace with name [{}] created", namespace.level(0));
+        } else {
+            log.warn("Namespace [{}] already exist", namespace.level(0));
         }
     }
 
     private void createTableIfNotExist(TableIdentifier tableId, GlueCatalog catalog, CatalogSchema schemaObj) throws IOException {
         if (!catalog.tableExists(tableId)) {
-            log.info("Table with name {} not exist in namespace {}, hence creating it", tableId.name(), tableId.namespace().level(0));
+            log.info("Table with name [{}] not exist in namespace {}, hence creating it", tableId.name(), tableId.namespace().level(0));
             var schema = createSchema(schemaObj);
             var partition = createPartition(schemaObj.partitionType(), schema);
             var table = catalog.createTable(tableId, schema, partition);
-            log.info("Data table {} created at {} location", table.name(), table.location());
+            log.info("Data table [{}] created at {} location", table.name(), table.location());
+        } else {
+            log.warn("Table [{}] already exist in namespace {}", tableId.name(), tableId.namespace().level(0));
         }
     }
 
