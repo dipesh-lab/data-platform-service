@@ -5,13 +5,13 @@ import io.micronaut.context.annotation.ConfigurationProperties;
 @ConfigurationProperties("app.platform.data")
 public class PlatformDataConfig {
 
-    private String folderPath;
+    private String catalogDir;
 
-    public String getFolderPath() {
-        return folderPath;
+    public String getCatalogDir() {
+        return catalogDir;
     }
 
-    public void setFolderPath(String folderPath) {
-        this.folderPath = folderPath;
+    public void setCatalogDir(String catalogDir) {
+        this.catalogDir = catalogDir;
     }
 }

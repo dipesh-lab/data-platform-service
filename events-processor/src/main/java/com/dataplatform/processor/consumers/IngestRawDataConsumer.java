@@ -2,7 +2,7 @@ package com.dataplatform.processor.consumers;
 
 import com.dataplatform.processor.consumers.models.RawDataEvent;
 import com.dataplatform.processor.exceptions.RetryException;
-import com.dataplatform.processor.services.RawDataService;
+import com.dataplatform.processor.services.impl.IngestRawDataServiceImpl;
 import com.github.f4b6a3.ulid.UlidCreator;
 import io.micronaut.context.annotation.Property;
 import io.micronaut.configuration.kafka.annotation.*;
@@ -36,12 +36,12 @@ public class IngestRawDataConsumer {
 
     private final Schema schema;
 
-    private final RawDataService rawDataService;
+    private final IngestRawDataServiceImpl ingestRawDataServiceImpl;
     private final KafkaClientDelegate kafkaClientDelegate;
 
-    public IngestRawDataConsumer(RawDataService rawDataService,
+    public IngestRawDataConsumer(IngestRawDataServiceImpl ingestRawDataServiceImpl,
                                  KafkaClientDelegate kafkaClientDelegate) {
-        this.rawDataService = rawDataService;
+        this.ingestRawDataServiceImpl = ingestRawDataServiceImpl;
         this.kafkaClientDelegate = kafkaClientDelegate;
         schema = createSchema();
     }
@@ -56,7 +56,7 @@ public class IngestRawDataConsumer {
 
         var records = toGenericRecords(events);
         if (!records.isEmpty()) {
-            var storedRawData = rawDataService.stageParquet(eventType, records);
+            var storedRawData = ingestRawDataServiceImpl.prepare(eventType, records);
             Optional.ofNullable(storedRawData).ifPresent(kafkaClientDelegate::send);
         }
     }

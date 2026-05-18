@@ -2,7 +2,7 @@ package com.dataplatform.processor.consumers;
 
 import com.dataplatform.processor.consumers.models.StoredRawData;
 import com.dataplatform.processor.exceptions.RetryException;
-import com.dataplatform.processor.services.RawDataService;
+import com.dataplatform.processor.services.impl.IngestRawDataServiceImpl;
 import io.micronaut.configuration.kafka.annotation.*;
 import io.micronaut.context.annotation.Property;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -19,14 +19,14 @@ import java.util.Optional;
                 exceptionTypes = { RetryException.class }, retryCount = 1, retryDelay = "2s"))
 public class CommitRawDataConsumer {
 
-    private final RawDataService rawDataService;
+    private final IngestRawDataServiceImpl ingestRawDataServiceImpl;
 
-    public CommitRawDataConsumer(RawDataService rawDataService) {
-        this.rawDataService = rawDataService;
+    public CommitRawDataConsumer(IngestRawDataServiceImpl ingestRawDataServiceImpl) {
+        this.ingestRawDataServiceImpl = ingestRawDataServiceImpl;
     }
 
     @Topic("dp-commit-raw-data-events")
     public void receive(ConsumerRecord<String, StoredRawData> record) {
-        Optional.ofNullable(record.value()).ifPresent(rawDataService::writeToTable);
+        Optional.ofNullable(record.value()).ifPresent(ingestRawDataServiceImpl::writeData);
     }
 }

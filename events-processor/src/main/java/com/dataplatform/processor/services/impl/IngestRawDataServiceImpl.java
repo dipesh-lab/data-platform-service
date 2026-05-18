@@ -1,7 +1,8 @@
-package com.dataplatform.processor.services;
+package com.dataplatform.processor.services.impl;
 
 import com.dataplatform.processor.consumers.models.StoredRawData;
 import com.dataplatform.processor.exceptions.RetryException;
+import com.dataplatform.processor.services.IngestDataService;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.iceberg.DataFile;
@@ -21,17 +22,18 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-public class RawDataService {
+public class IngestRawDataServiceImpl implements IngestDataService {
 
-    private static final Logger log = LoggerFactory.getLogger(RawDataService.class);
+    private static final Logger log = LoggerFactory.getLogger(IngestRawDataServiceImpl.class);
 
     private final Map<String, Table> tables;
 
-    public RawDataService(Map<String, Table> tables) {
+    public IngestRawDataServiceImpl(Map<String, Table> tables) {
         this.tables = tables;
     }
 
-    public StoredRawData stageParquet(String type, List<GenericRecord> records) throws IOException {
+    @Override
+    public StoredRawData prepare(String type, List<GenericRecord> records) {
         if (CollectionUtils.isEmpty(records)) {
             return null;
         }
@@ -63,7 +65,8 @@ public class RawDataService {
         });
     }
 
-    public void writeToTable(StoredRawData rawData) {
+    @Override
+    public void writeData(StoredRawData rawData) {
         if (null == rawData || StringUtils.isBlank(rawData.type()) || StringUtils.isBlank(rawData.location()) ||
                 rawData.totalRecords() <= 0 || rawData.length() <= 0) {
             log.warn("Required parquet location, type of size not found, abort processing");
