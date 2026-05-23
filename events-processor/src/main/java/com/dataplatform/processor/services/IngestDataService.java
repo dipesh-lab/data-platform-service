@@ -7,7 +7,7 @@ import java.util.List;
 
 public interface IngestDataService {
 
-    StoredRawData prepare(String type, List<GenericRecord> records);
+    StoredRawData prepare(String namespace, String type, List<GenericRecord> records);
 
     void writeData(StoredRawData rawData);
 }

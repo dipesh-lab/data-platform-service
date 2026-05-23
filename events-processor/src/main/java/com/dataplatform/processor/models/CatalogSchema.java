@@ -1,8 +1,8 @@
-package com.dataplatform.catalog.models;
+package com.dataplatform.processor.models;
 
 import java.util.List;
 
-public record CatalogSchema(String tableName, String bucketName, PartitionType partitionType, List<Field> fields) {
+public record CatalogSchema(String namespace, String tableName, String bucketName, PartitionType partitionType, List<Field> fields) {
 
     public enum PartitionType {
         DAY, HOUR;

@@ -7,6 +7,7 @@ import com.dataplatform.catalog.models.ApplySchema;
 import com.dataplatform.catalog.models.CatalogSchema;
 import com.dataplatform.catalog.utils.JsonUtils;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.CatalogProperties;
 import org.apache.iceberg.PartitionSpec;
@@ -23,8 +24,9 @@ import org.apache.iceberg.types.Types;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.util.Map;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import static org.apache.iceberg.types.Types.NestedField.required;
 
@@ -39,14 +41,14 @@ public class AWSGlueCatalogServiceImpl implements CatalogSchemaService {
 
     @Override
     public void applySchema(ApplySchema applySchema) throws IOException {
-        String filePath = catalogConfig.schemaFolder() + File.separator + applySchema.namespace() + File.separator + applySchema.eventName() + ".json";
+        String filePath = catalogConfig.schemaFolder() + File.separator + applySchema.namespace() + File.separator + applySchema.tableName() + ".json";
         var schemaFile = new File(filePath);
         if (!schemaFile.exists()) {
-            throw new CatalogException("Catalog schema file [" + applySchema.eventName() + ".json] for namespace [" + applySchema.namespace() + "] not exist");
+            throw new CatalogException("Catalog schema file [" + applySchema.tableName() + ".json] for namespace [" + applySchema.namespace() + "] not exist");
         }
         try (var catalog = new GlueCatalog()) {
             catalog.setConf(new Configuration());
-            var bucketUri = "s3://" + applySchema.namespace() + "-" +applySchema.eventName();
+            var bucketUri = "s3://" + applySchema.namespace() + "-" +applySchema.tableName();
             catalog.initialize("glue_catalog",
                     Map.of(
                             CatalogProperties.WAREHOUSE_LOCATION, bucketUri,
@@ -64,7 +66,7 @@ public class AWSGlueCatalogServiceImpl implements CatalogSchemaService {
             createNamespaceIfNotExist(namespaceObj, catalog);
             var schemaObj = readSchema(schemaFile);
             var tableId = TableIdentifier.of(namespaceObj, schemaObj.tableName());
-            createTableIfNotExist(tableId, catalog, schemaObj);
+            createOrUpdateTable(tableId, catalog, schemaObj);
         }
     }
 
@@ -78,15 +80,25 @@ public class AWSGlueCatalogServiceImpl implements CatalogSchemaService {
         }
     }
 
-    private void createTableIfNotExist(TableIdentifier tableId, GlueCatalog catalog, CatalogSchema schemaObj) throws IOException {
-        if (!catalog.tableExists(tableId)) {
+    private void createOrUpdateTable(TableIdentifier tableId, GlueCatalog catalog, CatalogSchema schemaObj) {
+        if (catalog.tableExists(tableId)) {
+            log.warn("Table [{}] already exist in namespace {}", tableId.name(), tableId.namespace().level(0));
+            var table = catalog.loadTable(tableId);
+            var columns = table.schema().columns().stream().map(Types.NestedField::name).collect(Collectors.toSet());
+            var newColumns = schemaObj.fields().stream().filter(field -> !columns.contains(field.name())).toList();
+            log.info("Found {} new columns need to be added", newColumns.size());
+            if (CollectionUtils.isNotEmpty(newColumns)) {
+                var updateSchema = table.updateSchema();
+                newColumns.forEach(field -> updateSchema.addColumn(field.name(), getType(field.dataType())));
+                updateSchema.commit();
+                log.info("Table is updated with new columns");
+            }
+        } else {
             log.info("Table with name [{}] not exist in namespace {}, hence creating it", tableId.name(), tableId.namespace().level(0));
             var schema = createSchema(schemaObj);
             var partition = createPartition(schemaObj.partitionType(), schema);
             var table = catalog.createTable(tableId, schema, partition);
             log.info("Data table [{}] created at {} location", table.name(), table.location());
-        } else {
-            log.warn("Table [{}] already exist in namespace {}", tableId.name(), tableId.namespace().level(0));
         }
     }
 

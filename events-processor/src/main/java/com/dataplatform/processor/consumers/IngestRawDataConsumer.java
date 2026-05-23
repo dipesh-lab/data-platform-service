@@ -6,6 +6,7 @@ import com.dataplatform.processor.services.impl.IngestRawDataServiceImpl;
 import com.github.f4b6a3.ulid.UlidCreator;
 import io.micronaut.context.annotation.Property;
 import io.micronaut.configuration.kafka.annotation.*;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.iceberg.Schema;
@@ -47,24 +48,22 @@ public class IngestRawDataConsumer {
     }
 
     @Topic("dp-raw-grouped-events")
-    public void receive(ConsumerRecord<String, List<RawDataEvent>> record) throws IOException {
-        var eventType = record.key();
-        var events = record.value() != null ? record.value() : List.<RawDataEvent>of();
-        log.info("Received total {} grouped raw events for type {} at {}", events.size(), eventType, record.timestamp());
-        events.forEach(event -> log.info("Type {}, tenant {}, time {}, attrs {}",
-                event.type(), event.tenantId(), event.eventTime(), event.attributes()));
+    public void receive(ConsumerRecord<String, List<RawDataEvent>> record) {
+        if (CollectionUtils.isNotEmpty(record.value())) {
+            var events = record.value();
+            var namespace = events.getFirst().namespace();
+            var eventType = events.getFirst().type();
+            log.info("Received total {} grouped raw events for type {} at {}", events.size(), eventType, record.timestamp());
+            events.forEach(event -> log.info("Type {}, tenant {}, time {}, attrs {}",
+                    event.type(), event.tenantId(), event.eventTime(), event.attributes()));
 
-        var records = toGenericRecords(events);
-        if (!records.isEmpty()) {
-            var storedRawData = ingestRawDataServiceImpl.prepare(eventType, records);
+            var records = toGenericRecords(events);
+            var storedRawData = ingestRawDataServiceImpl.prepare(namespace, eventType, records);
             Optional.ofNullable(storedRawData).ifPresent(kafkaClientDelegate::send);
         }
     }
 
     private List<GenericRecord> toGenericRecords(List<RawDataEvent> events) {
-        if (events.isEmpty()) {
-            return List.of();
-        }
         return events.stream().filter(event -> Objects.nonNull(event.tenantId()))
                 .map(event -> {
                     var record = GenericRecord.create(schema);

@@ -17,18 +17,18 @@ public class CatalogSchemaHandler implements RequestHandler<ApplySchemaDTO, Stri
 
     private final EnvVariables envVars;
 
-    public CatalogSchemaHandler(EnvVariables envVars) {
-        this.envVars = envVars;
+    public CatalogSchemaHandler() {
+        this.envVars = EnvVariables.getInstance();
     }
 
     @Override
     public String handleRequest(ApplySchemaDTO schemaDto, Context context) {
-        if (StringUtils.isBlank(schemaDto.namespace()) || StringUtils.isBlank(schemaDto.eventName())) {
+        if (StringUtils.isBlank(schemaDto.namespace()) || StringUtils.isBlank(schemaDto.tableName())) {
             return "Schema namespace or event name not found";
         }
         var catalogConfig = new CatalogConfig(envVars.getRegion(), envVars.getEnvVar("CATALOG_DATA_PATH"),
                 envVars.getEnvVar("GLUE_ASSUME_ROLE_ARN"));
-        var applySchema = new ApplySchema(schemaDto.namespace(), schemaDto.eventName());
+        var applySchema = new ApplySchema(schemaDto.namespace(), schemaDto.tableName());
         var service = new AWSGlueCatalogServiceImpl(catalogConfig);
         try {
             service.applySchema(applySchema);
@@ -37,9 +37,5 @@ public class CatalogSchemaHandler implements RequestHandler<ApplySchemaDTO, Stri
             log.error("An error occurred while applying schema", e);
             return e.getMessage();
         }
-    }
-
-    public static void main(String[] arg) {
-        var handler = new CatalogSchemaHandler(EnvVariables.getInstance());
     }
 }

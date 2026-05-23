@@ -13,6 +13,7 @@
         <module>events-producer</module>
         <module>events-processor</module>
         <module>infrastructure</module>
+        <module>serverless</module>
     </modules>
 
     <properties>
@@ -23,6 +24,8 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
+        <maven-dependency-plugin.version>3.10.0</maven-dependency-plugin.version>
+        <maven-assembly-plugin.version>3.8.0</maven-assembly-plugin.version>
 
         <micronaut.version>4.10.13</micronaut.version>
         <micronaut.aot.enabled>false</micronaut.aot.enabled>
@@ -31,6 +34,7 @@
         <micronaut-http-validation.version>4.10.21</micronaut-http-validation.version>
 
         <awssdk.verion>2.44.0</awssdk.verion>
+        <aws-lambda-java-core.version>1.2.3</aws-lambda-java-core.version>
         <iceberg-core.version>1.10.1</iceberg-core.version>
         <parquet-column.version>1.16.0</parquet-column.version>
         <lombok.version>1.18.36</lombok.version>

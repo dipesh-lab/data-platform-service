@@ -9,8 +9,8 @@ module "apply_catalog_schema_lambda" {
   publish             = true
   s3_existing_package = {
     bucket     = data.aws_s3_bucket.deployable_artifacts.id
-    key        = aws_s3_object.data_platform_infra_jar.key
-    version_id = aws_s3_object.data_platform_infra_jar.version_id
+    key        = aws_s3_object.data_platform_serverless_jar.key
+    version_id = aws_s3_object.data_platform_serverless_jar.version_id
   }
 
   environment_variables = {
@@ -23,11 +23,14 @@ module "apply_catalog_schema_lambda" {
     stsRole = {
       effect = "Allow",
       actions = ["sts:AssumeRole"],
-      resources = [aws_iam_role.dp_glue_catalog.arn]
+      resources = [data.aws_iam_role.dp_glue_catalog_role.arn]
     }
   }
 
-  layers = [aws_lambda_layer_version.catalog_data_layer.arn]
+  layers = [
+    aws_lambda_layer_version.dependencies_layer.arn,
+    aws_lambda_layer_version.catalog_data_layer.arn
+  ]
   cloudwatch_logs_retention_in_days = local.default_log_retention_days
   runtime                           = local.java_runtime
   memory_size                       = local.default_lambda_max_memory
@@ -36,6 +39,7 @@ module "apply_catalog_schema_lambda" {
   tags                              = local.common_tags
 
   depends_on = [
-    aws_lambda_layer_version.catalog_data_layer
+    aws_lambda_layer_version.catalog_data_layer,
+    aws_lambda_layer_version.dependencies_layer
   ]
 }

@@ -1,4 +1,5 @@
 {
+  "namespace": "global",
   "tableName": "api_events",
   "bucketName": "api-events",
   "partitionType": "DAY",

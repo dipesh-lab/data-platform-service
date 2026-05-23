@@ -1,8 +1,13 @@
 package com.dataplatform.processor.services.impl;
 
 import com.dataplatform.processor.consumers.models.StoredRawData;
+import com.dataplatform.processor.exceptions.CatalogSchemaException;
+import com.dataplatform.processor.exceptions.CatalogTableNotFoundException;
 import com.dataplatform.processor.exceptions.RetryException;
+import com.dataplatform.processor.services.CatalogSchemaRegistry;
 import com.dataplatform.processor.services.IngestDataService;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.iceberg.DataFile;
@@ -18,37 +23,37 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
+@Singleton
 public class IngestRawDataServiceImpl implements IngestDataService {
 
     private static final Logger log = LoggerFactory.getLogger(IngestRawDataServiceImpl.class);
 
-    private final Map<String, Table> tables;
+    private final CatalogSchemaRegistry schemaRegistry;
 
-    public IngestRawDataServiceImpl(Map<String, Table> tables) {
-        this.tables = tables;
+    @Inject
+    public IngestRawDataServiceImpl(CatalogSchemaRegistry schemaRegistry) {
+        this.schemaRegistry = schemaRegistry;
     }
 
     @Override
-    public StoredRawData prepare(String type, List<GenericRecord> records) {
+    public StoredRawData prepare(String namespace, String type, List<GenericRecord> records) {
         if (CollectionUtils.isEmpty(records)) {
             return null;
         }
-        return resolveTable(type).map(table -> {
+        try {
+            var table = resolveTable(namespace, type);
             String fileName = UUID.randomUUID() + ".parquet";
             try (var io = table.io()) {
                 var outputFile = io.newOutputFile(table.location() + "/data/" + fileName);
-
                 FileAppender<GenericRecord> fileAppender = Parquet.write(outputFile)
                         .schema(table.schema())
                         .createWriterFunc(GenericParquetWriter::create)
                         .build();
                 records.forEach(fileAppender::add);
                 fileAppender.close();
-                var storedRecords = new StoredRawData(outputFile.location(), type, records.size(), fileAppender.length());
+                var storedRecords = new StoredRawData(namespace, type, outputFile.location(), records.size(), fileAppender.length());
                 log.info("Staged parquet file {} for type {} with {} records ({} bytes)",
                         storedRecords.location(),
                         type,
@@ -59,10 +64,10 @@ public class IngestRawDataServiceImpl implements IngestDataService {
                 log.error("Error occurred while writing parquet files", e);
                 throw new RetryException(e.getMessage(), e);
             }
-        }).orElseGet(() -> {
-            log.warn("No target Iceberg table found for type {}, hence abort processing", type);
-            return null;
-        });
+        } catch (CatalogTableNotFoundException e) {
+            log.error("Catalog table [{}] not found in [{}] namespace", type, namespace, e);
+            throw new CatalogSchemaException("Catalog table not found: " + e.getMessage(), e);
+        }
     }
 
     @Override
@@ -73,33 +78,26 @@ public class IngestRawDataServiceImpl implements IngestDataService {
             return;
         }
         log.info("Fetch iceberg table for type {}", rawData.type());
-        var tableOpt = resolveTable(rawData.type());
-        if (tableOpt.isEmpty()) {
-            log.warn("Iceberg table not found of type {}", rawData.type());
-            return;
+        try {
+            var table = resolveTable(rawData.namespace(), rawData.type());
+            log.info("Add iceberg metadata with created parquet data. Location {}, total records {}, file size {}",
+                    rawData.location(), rawData.totalRecords(), rawData.length());
+            DataFile dataFile = DataFiles.builder(table.spec())
+                    .withPath(rawData.location())
+                    .withFormat(FileFormat.PARQUET)
+                    .withRecordCount(rawData.totalRecords())
+                    .withFileSizeInBytes(rawData.length())
+                    .build();
+            table.newAppend()
+                    .appendFile(dataFile)
+                    .commit();
+        } catch(Exception e) {
+            log.error("Error during update table metadata");
         }
-        tableOpt.ifPresent(table -> {
-            try {
-                log.info("Add iceberg metadata with created parquet data. Location {}, total records {}, file size {}",
-                        rawData.location(), rawData.totalRecords(), rawData.length());
-                DataFile dataFile = DataFiles.builder(table.spec())
-                        .withPath(rawData.location())
-                        .withFormat(FileFormat.PARQUET)
-                        .withRecordCount(rawData.totalRecords())
-                        .withFileSizeInBytes(rawData.length())
-                        .build();
-
-                table.newAppend()
-                        .appendFile(dataFile)
-                        .commit();
-            } catch(Exception e) {
-                log.error("Error during update table metadata");
-            }
-        });
     }
 
-    private Optional<Table> resolveTable(String type) {
-        return Optional.ofNullable(tables.get(type));
+    private Table resolveTable(String namespace, String type) {
+        return schemaRegistry.getTable(namespace, type);
     }
 
 }

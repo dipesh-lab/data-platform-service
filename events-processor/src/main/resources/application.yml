@@ -7,7 +7,7 @@ micronaut:
 kafka:
   enabled: true
   bootstrap:
-    servers: localhost:9092
+    servers: "${KAFKA_BROKERS}"
   reconnect.backoff.max.ms: 1000
   reconnect.backoff.ms: 50
   retry.backoff.max.ms: 1000
@@ -26,18 +26,18 @@ kafka:
 
   streams:
     default:
-      application.id: "dp-data-process-app"
+      application.id: "${STREAM_APP_NAME}"
       processing.guarantee: "exactly_once_v2"
       commit.interval.ms: 100
       producer.transaction.timeout.ms: 60000
       session.timeout.ms: 45000
       heartbeat.interval.ms: 3000
       num.stream.threads: 1
-      max.poll.records: 1
+      max.poll.records: ${MAX_POLL_RECORDS}
       auto.offset.reset: "earliest"
-      state.dir: "/tmp/kafka-streams/dp-data-process-app"
+      state.dir: "${STREAM_STATE_DIR}"
 
 app:
   platform:
     data:
-      folderPath: "file:///home/tom/Downloads/tmpdata/dpwarehouse"
+      folderPath: "${CATALOG_DATA_DIR}"

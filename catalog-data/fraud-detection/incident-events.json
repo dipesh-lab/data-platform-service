@@ -1,4 +1,5 @@
 {
+  "namespace": "fraud-detection",
   "tableName": "incident_events",
   "bucketName": "incident-events",
   "partitionType": "DAY",

@@ -7,7 +7,6 @@ provider "aws" {
 
 terraform {
   required_version = ">= 1.15.3"
-
   required_providers {
     aws = {
       source = "hashicorp/aws"
@@ -17,7 +16,7 @@ terraform {
 
   backend "s3" {
     bucket               = "tfstate-resources-${data.aws_caller_identity.current.account_id}-${data.aws_region.current.id}-an"
-    key                  = "data-platform-service-infra.tfstate"
+    key                  = "data-platform-serverless-app.tfstate"
     workspace_key_prefix = "data-platform-service"
   }
 }

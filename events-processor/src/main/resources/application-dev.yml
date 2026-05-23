@@ -1,0 +1,15 @@
+kafka:
+  enabled: true
+  bootstrap:
+    servers: "localhost:9092"
+
+  streams:
+    default:
+      application.id: "dp-data-process-app"
+      max.poll.records: 1
+      state.dir: "/tmp/kafka-streams/dp-data-process-app"
+
+app:
+  platform:
+    data:
+      folderPath: "file:///home/tom/Downloads/tmpdata/dpwarehouse"

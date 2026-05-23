@@ -6,6 +6,8 @@ import io.micronaut.context.annotation.ConfigurationProperties;
 public class PlatformDataConfig {
 
     private String catalogDir;
+    private String assumeRoleArn;
+    private String region;
 
     public String getCatalogDir() {
         return catalogDir;
@@ -13,5 +15,21 @@ public class PlatformDataConfig {
 
     public void setCatalogDir(String catalogDir) {
         this.catalogDir = catalogDir;
+    }
+
+    public String getAssumeRoleArn() {
+        return assumeRoleArn;
+    }
+
+    public void setAssumeRoleArn(String assumeRoleArn) {
+        this.assumeRoleArn = assumeRoleArn;
+    }
+
+    public String getRegion() {
+        return region;
+    }
+
+    public void setRegion(String region) {
+        this.region = region;
     }
 }
