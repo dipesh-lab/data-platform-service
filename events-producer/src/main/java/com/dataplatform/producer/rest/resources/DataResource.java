@@ -38,11 +38,11 @@ public class DataResource {
             var accountId = accountIds.get(random.nextInt(3));
             var userId = userIds.get(random.nextInt(5));
             var event = DataEvent.builder()
-                    .namespace("IdentityPlatform")
+                    .namespace("global")
                     .tenantId(accountId)
-                    .type("app_events")
+                    .type("api_events")
                     .eventTime(Instant.now())
-                    .attributes(Map.of("user_id", userId, "op_type", "Api.GetIntegrations", "result", "SUCCESS"))
+                    .attributes(Map.of("user_id", userId, "op_type", "GetIntegrations", "result", "SUCCESS"))
                     .build();
             eventClient.generateAppEvent(accountId, event).subscribe();
         });

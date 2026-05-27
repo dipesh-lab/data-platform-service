@@ -1,0 +1,32 @@
+{
+  "namespace": "fraud_detection",
+  "tableName": "incident_events",
+  "bucketName": "fraud-detection-incident-events",
+  "partitionType": "DAY",
+  "fields": [
+    {
+      "id": 10,
+      "name": "user_id",
+      "dataType": "STRING",
+      "deprecated": false
+    },
+    {
+      "id": 11,
+      "name": "source",
+      "dataType": "STRING",
+      "deprecated": false
+    },
+    {
+      "id": 12,
+      "name": "ipaddress",
+      "dataType": "STRING",
+      "deprecated": false
+    },
+    {
+      "id": 13,
+      "name": "result",
+      "dataType": "STRING",
+      "deprecated": false
+    }
+  ]
+}

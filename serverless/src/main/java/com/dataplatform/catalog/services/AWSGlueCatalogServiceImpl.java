@@ -7,7 +7,6 @@ import com.dataplatform.catalog.models.ApplySchema;
 import com.dataplatform.catalog.models.CatalogSchema;
 import com.dataplatform.catalog.utils.JsonUtils;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.collections4.CollectionUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.CatalogProperties;
 import org.apache.iceberg.PartitionSpec;
@@ -26,12 +25,16 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
+import static org.apache.iceberg.types.Types.NestedField.optional;
 import static org.apache.iceberg.types.Types.NestedField.required;
 
 @Slf4j
 public class AWSGlueCatalogServiceImpl implements CatalogSchemaService {
+
+    private final Set<String> commonFields = Set.of("event_id", "tenant_id", "load_time", "event_time");
 
     private final CatalogConfig catalogConfig;
 
@@ -46,9 +49,11 @@ public class AWSGlueCatalogServiceImpl implements CatalogSchemaService {
         if (!schemaFile.exists()) {
             throw new CatalogException("Catalog schema file [" + applySchema.tableName() + ".json] for namespace [" + applySchema.namespace() + "] not exist");
         }
+        var schemaObj = readSchema(schemaFile);
         try (var catalog = new GlueCatalog()) {
             catalog.setConf(new Configuration());
-            var bucketUri = "s3://" + applySchema.namespace() + "-" +applySchema.tableName();
+            var bucketUri = "s3://" + schemaObj.bucketName();
+            log.info("Target bucket uri [{}]", bucketUri);
             catalog.initialize("glue_catalog",
                     Map.of(
                             CatalogProperties.WAREHOUSE_LOCATION, bucketUri,
@@ -62,9 +67,8 @@ public class AWSGlueCatalogServiceImpl implements CatalogSchemaService {
                     )
             );
             log.info("Glue catalog initialized");
-            var namespaceObj = Namespace.of(applySchema.namespace());
+            var namespaceObj = Namespace.of(schemaObj.namespace());
             createNamespaceIfNotExist(namespaceObj, catalog);
-            var schemaObj = readSchema(schemaFile);
             var tableId = TableIdentifier.of(namespaceObj, schemaObj.tableName());
             createOrUpdateTable(tableId, catalog, schemaObj);
         }
@@ -84,15 +88,25 @@ public class AWSGlueCatalogServiceImpl implements CatalogSchemaService {
         if (catalog.tableExists(tableId)) {
             log.warn("Table [{}] already exist in namespace {}", tableId.name(), tableId.namespace().level(0));
             var table = catalog.loadTable(tableId);
-            var columns = table.schema().columns().stream().map(Types.NestedField::name).collect(Collectors.toSet());
-            var newColumns = schemaObj.fields().stream().filter(field -> !columns.contains(field.name())).toList();
+            var columns = table.schema().columns().stream().map(Types.NestedField::name)
+                    .collect(Collectors.toSet());
+            columns.removeIf(commonFields::contains);
+            var newColumns = schemaObj.fields().stream()
+                    .filter(field -> !columns.contains(field.name())).toList();
             log.info("Found {} new columns need to be added", newColumns.size());
-            if (CollectionUtils.isNotEmpty(newColumns)) {
-                var updateSchema = table.updateSchema();
-                newColumns.forEach(field -> updateSchema.addColumn(field.name(), getType(field.dataType())));
-                updateSchema.commit();
-                log.info("Table is updated with new columns");
-            }
+            var updateSchema = table.updateSchema();
+            newColumns.forEach(field -> {
+                log.info("Add new column {} of type {}", field.name(), field.dataType());
+                updateSchema.addColumn(field.name(), getType(field.dataType()));
+                updateSchema.makeColumnOptional(field.name());
+            });
+            var schemaCols = schemaObj.fields().stream().map(CatalogSchema.Field::name).collect(Collectors.toSet());
+            columns.removeIf(schemaCols::contains);
+            log.info("Removable columns {}", columns);
+            columns.forEach(updateSchema::deleteColumn);
+            updateSchema.commit();
+            log.info("Table is updated with new columns");
+
         } else {
             log.info("Table with name [{}] not exist in namespace {}, hence creating it", tableId.name(), tableId.namespace().level(0));
             var schema = createSchema(schemaObj);
@@ -111,14 +125,14 @@ public class AWSGlueCatalogServiceImpl implements CatalogSchemaService {
     private Schema createSchema(CatalogSchema catalogSchema) {
         var fields = new ArrayList<Types.NestedField>(catalogSchema.fields().size() + 5);
         fields.add(required(1, "event_id", Types.StringType.get()));
-        fields.add(required(2, "tenant_id", Types.StringType.get()));
-        fields.add(required(3, "load_time", Types.LongType.get()));
+        fields.add(optional(2, "tenant_id", Types.StringType.get()));
+        fields.add(required(3, "load_time",Types.TimestampType.withoutZone()));
         fields.add(required(4, "event_time", Types.TimestampType.withoutZone()));
 
         for (int i = 0; i< catalogSchema.fields().size(); i++) {
             var field = catalogSchema.fields().get(i);
             var dataType = getType(field.dataType());
-            fields.add(required(5 + i, field.name(), dataType));
+            fields.add(optional(field.id(), field.name(), dataType));
         }
         return new Schema(fields);
     }

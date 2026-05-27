@@ -8,7 +8,7 @@ public record CatalogSchema(String namespace, String tableName, String bucketNam
         DAY, HOUR;
     }
 
-    public record Field(String name, DataType dataType){}
+    public record Field(Integer id, String name, DataType dataType, Boolean deprecated){}
 
     public enum DataType {
         STRING, INT, LONG, TIMESTAMP, DATE;

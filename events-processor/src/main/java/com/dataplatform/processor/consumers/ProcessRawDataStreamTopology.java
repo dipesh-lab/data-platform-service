@@ -3,8 +3,8 @@ package com.dataplatform.processor.consumers;
 import com.dataplatform.processor.consumers.models.RawDataEvent;
 import com.dataplatform.processor.consumers.tranformers.JsonSerde;
 import io.micronaut.configuration.kafka.streams.ConfiguredStreamBuilder;
+import io.micronaut.context.annotation.Context;
 import io.micronaut.context.annotation.Factory;
-import jakarta.inject.Singleton;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.kstream.*;
 import org.apache.kafka.streams.state.KeyValueStore;
@@ -16,7 +16,7 @@ import java.util.*;
 @Factory
 public class ProcessRawDataStreamTopology {
 
-    @Singleton
+    @Context
     public KStream<String, List<RawDataEvent>> groupRawDataStream(ConfiguredStreamBuilder builder) {
         var dataEventSerde = new JsonSerde<RawDataEvent>(RawDataEvent.class);
         var dataEventListSerde = Serdes.ListSerde(ArrayList.class, dataEventSerde);

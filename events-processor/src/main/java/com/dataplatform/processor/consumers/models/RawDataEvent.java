@@ -12,4 +12,5 @@ public record RawDataEvent(String namespace,
                            String tenantId,
                            @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "UTC") Instant eventTime,
                            Map<String, Object> attributes) {
+
 }

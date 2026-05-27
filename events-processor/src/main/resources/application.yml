@@ -40,4 +40,6 @@ kafka:
 app:
   platform:
     data:
-      folderPath: "${CATALOG_DATA_DIR}"
+      catalogDir: "${CATALOG_DATA_DIR}"
+      assumeRoleArn: "${GLUE_ASSUME_ROLE_ARN}"
+      region: "${GLUE_AWS_REGION}"

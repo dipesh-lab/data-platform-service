@@ -1,12 +1,9 @@
 package com.dataplatform.processor.services.impl;
 
+import com.dataplatform.processor.catalog.CachedCatalogTableRegistry;
 import com.dataplatform.processor.consumers.models.StoredRawData;
-import com.dataplatform.processor.exceptions.CatalogSchemaException;
-import com.dataplatform.processor.exceptions.CatalogTableNotFoundException;
 import com.dataplatform.processor.exceptions.RetryException;
-import com.dataplatform.processor.services.CatalogSchemaRegistry;
 import com.dataplatform.processor.services.IngestDataService;
-import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -24,21 +21,21 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
 
 @Singleton
 public class IngestRawDataServiceImpl implements IngestDataService {
 
     private static final Logger log = LoggerFactory.getLogger(IngestRawDataServiceImpl.class);
 
-    private final CatalogSchemaRegistry schemaRegistry;
+    private final CachedCatalogTableRegistry cachedCatalogTableRegistry;
 
-    @Inject
-    public IngestRawDataServiceImpl(CatalogSchemaRegistry schemaRegistry) {
-        this.schemaRegistry = schemaRegistry;
+    public IngestRawDataServiceImpl(CachedCatalogTableRegistry cachedCatalogTableRegistry) {
+        this.cachedCatalogTableRegistry = cachedCatalogTableRegistry;
     }
 
     @Override
-    public StoredRawData prepare(String namespace, String type, List<GenericRecord> records) {
+    public StoredRawData prepare(String namespace, String type, List<GenericRecord> records) throws Exception {
         if (CollectionUtils.isEmpty(records)) {
             return null;
         }
@@ -64,9 +61,11 @@ public class IngestRawDataServiceImpl implements IngestDataService {
                 log.error("Error occurred while writing parquet files", e);
                 throw new RetryException(e.getMessage(), e);
             }
-        } catch (CatalogTableNotFoundException e) {
-            log.error("Catalog table [{}] not found in [{}] namespace", type, namespace, e);
-            throw new CatalogSchemaException("Catalog table not found: " + e.getMessage(), e);
+        } catch (RetryException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("An error occurred while preparing data for [{}] table, [{}] namespace", type, namespace, e);
+            throw e;
         }
     }
 
@@ -92,12 +91,12 @@ public class IngestRawDataServiceImpl implements IngestDataService {
                     .appendFile(dataFile)
                     .commit();
         } catch(Exception e) {
-            log.error("Error during update table metadata");
+            log.error("Error during commiting table data", e);
         }
     }
 
-    private Table resolveTable(String namespace, String type) {
-        return schemaRegistry.getTable(namespace, type);
+    private Table resolveTable(String namespace, String type) throws ExecutionException {
+        return cachedCatalogTableRegistry.getTable(namespace, type);
     }
 
 }

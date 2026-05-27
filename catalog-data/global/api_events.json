@@ -1,0 +1,32 @@
+{
+  "namespace": "global",
+  "tableName": "api_events",
+  "bucketName": "global-api-events",
+  "partitionType": "DAY",
+  "fields": [
+    {
+      "id": 10,
+      "name": "user_id",
+      "dataType": "STRING",
+      "deprecated": false
+    },
+    {
+      "id": 11,
+      "name": "op_type",
+      "dataType": "STRING",
+      "deprecated": false
+    },
+    {
+      "id": 12,
+      "name": "result",
+      "dataType": "STRING",
+      "deprecated": false
+    },
+    {
+      "id": 13,
+      "name": "error",
+      "dataType": "STRING",
+      "deprecated": false
+    }
+  ]
+}

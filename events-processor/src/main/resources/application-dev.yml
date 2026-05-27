@@ -7,9 +7,11 @@ kafka:
     default:
       application.id: "dp-data-process-app"
       max.poll.records: 1
-      state.dir: "/tmp/kafka-streams/dp-data-process-app"
+      state.dir: "/home/tom/Downloads/tmpdata/statedir"
 
 app:
   platform:
     data:
-      folderPath: "file:///home/tom/Downloads/tmpdata/dpwarehouse"
+      catalogDir: "/home/tom/projects/javaworkspace/data-platform-service/catalog-data"
+      assumeRoleArn: "arn:aws:iam::128779316957:role/dp-glue-catalog-role-dev"
+      region: "ap-southeast-2"

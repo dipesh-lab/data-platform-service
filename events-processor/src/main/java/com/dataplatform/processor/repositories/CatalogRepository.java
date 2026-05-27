@@ -1,15 +1,9 @@
 package com.dataplatform.processor.repositories;
 
 import com.dataplatform.processor.exceptions.CatalogSchemaException;
-import com.dataplatform.processor.models.CatalogSchema;
-import org.apache.iceberg.Table;
-
-import java.util.List;
-import java.util.Optional;
+import org.apache.iceberg.aws.glue.GlueCatalog;
 
 public interface CatalogRepository {
 
-    Optional<Table> findTable(String namespace, String tableName, String bucketName) throws CatalogSchemaException;
-
-    List<CatalogSchema> listAllSchemas();
+    GlueCatalog getCatalog(String namespace, String tableName) throws CatalogSchemaException;
 }

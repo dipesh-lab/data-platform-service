@@ -18,7 +18,7 @@ import java.util.List;
 public class BufferRecordsProcessor implements Processor<String, RawDataEvent, String, List<RawDataEvent>> {
 
     public static final String FILE_STORE_NAME = "raw-event-local-store";
-    private static final int BATCH_SIZE = 3;
+    private static final int BATCH_SIZE = 10000;
     private static final Logger log = LoggerFactory.getLogger(BufferRecordsProcessor.class);
 
     private ProcessorContext<String, List<RawDataEvent>> context;
