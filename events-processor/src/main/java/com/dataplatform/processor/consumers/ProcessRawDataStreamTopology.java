@@ -12,9 +12,12 @@ import org.apache.kafka.streams.state.StoreBuilder;
 import org.apache.kafka.streams.state.Stores;
 
 import java.util.*;
+import java.util.function.Supplier;
 
 @Factory
 public class ProcessRawDataStreamTopology {
+
+    public final String FILE_STORE_NAME = "raw-event-local-store";
 
     @Context
     public KStream<String, List<RawDataEvent>> groupRawDataStream(ConfiguredStreamBuilder builder) {
@@ -22,14 +25,16 @@ public class ProcessRawDataStreamTopology {
         var dataEventListSerde = Serdes.ListSerde(ArrayList.class, dataEventSerde);
 
         StoreBuilder<KeyValueStore<String, List<RawDataEvent>>> storeBuilder = Stores.keyValueStoreBuilder(
-                Stores.persistentKeyValueStore(BufferRecordsProcessor.FILE_STORE_NAME),
+                Stores.persistentKeyValueStore(FILE_STORE_NAME),
                 Serdes.String(),
                 dataEventListSerde
         );
         builder.addStateStore(storeBuilder);
 
         KStream<String, RawDataEvent> stream = builder.stream("dp-raw-events", Consumed.with(Serdes.String(), dataEventSerde));
-        var transformedStream = stream.process(BufferRecordsProcessor::new, BufferRecordsProcessor.FILE_STORE_NAME);
+        var transformedStream = stream.process(
+                () -> new BufferRecordsProcessor(FILE_STORE_NAME, 1000, "5m"),
+                FILE_STORE_NAME);
         transformedStream.to("dp-raw-grouped-events", Produced.with(Serdes.String(), dataEventListSerde));
         return transformedStream;
     }

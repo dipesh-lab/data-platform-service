@@ -17,12 +17,20 @@ import java.util.List;
 
 public class BufferRecordsProcessor implements Processor<String, RawDataEvent, String, List<RawDataEvent>> {
 
-    public static final String FILE_STORE_NAME = "raw-event-local-store";
-    private static final int BATCH_SIZE = 10000;
     private static final Logger log = LoggerFactory.getLogger(BufferRecordsProcessor.class);
+
+    private final String fileStoreName;
+    private final Integer maxBufferRecords;
+    private final Duration bufferTime;
 
     private ProcessorContext<String, List<RawDataEvent>> context;
     private KeyValueStore<String, List<RawDataEvent>> kvStore;
+
+    public BufferRecordsProcessor(String fileStoreName, Integer maxBufferRecords, String maxBufferTime) {
+        this.fileStoreName = fileStoreName;
+        this.maxBufferRecords = maxBufferRecords;
+        this.bufferTime = Duration.parse(maxBufferTime);
+    }
 
     @Override
     public void process(Record<String, RawDataEvent> record) {
@@ -33,8 +41,8 @@ public class BufferRecordsProcessor implements Processor<String, RawDataEvent, S
             list.add(event);
             log.info("Data Event added to buffer");
             kvStore.put(event.type(), list);
-            if (list.size() >= BATCH_SIZE) {
-                log.info("Buffered records reached batch size {}, forwarding", BATCH_SIZE);
+            if (list.size() >= maxBufferRecords) {
+                log.info("Buffered records reached batch size {}, forwarding", maxBufferRecords);
                 kvStore.delete(event.type());
                 var copiedList = List.copyOf(list);
                 log.info("Total {} events forwarding", copiedList.size());
@@ -46,8 +54,8 @@ public class BufferRecordsProcessor implements Processor<String, RawDataEvent, S
     @Override
     public void init(ProcessorContext<String, List<RawDataEvent>> context) {
         this.context = context;
-        log.info("Initializing processor with store {}", FILE_STORE_NAME);
-        this.kvStore = context.getStateStore(FILE_STORE_NAME);
+        log.info("Initializing processor with store {}", fileStoreName);
+        this.kvStore = context.getStateStore(fileStoreName);
         Punctuator punctuator = timestamp -> {
             log.info("Punctuator triggered at {}", timestamp);
             try (var itr = kvStore.all()) {
@@ -62,7 +70,7 @@ public class BufferRecordsProcessor implements Processor<String, RawDataEvent, S
                 records.forEach(context::forward);
             }
         };
-        context.schedule(Duration.ofSeconds(60L), PunctuationType.WALL_CLOCK_TIME, punctuator);
+        context.schedule(bufferTime, PunctuationType.WALL_CLOCK_TIME, punctuator);
         log.info("Scheduled punctuator every 60s");
     }
 }

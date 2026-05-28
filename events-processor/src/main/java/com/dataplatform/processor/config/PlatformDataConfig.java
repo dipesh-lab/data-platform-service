@@ -6,6 +6,8 @@ import io.micronaut.context.annotation.ConfigurationProperties;
 public class PlatformDataConfig {
 
     private String catalogDir;
+    private Integer maxBufferRecords;
+    private String maxBufferTime;
     private String assumeRoleArn;
     private String region;
 
@@ -15,6 +17,22 @@ public class PlatformDataConfig {
 
     public void setCatalogDir(String catalogDir) {
         this.catalogDir = catalogDir;
+    }
+
+    public Integer getMaxBufferRecords() {
+        return maxBufferRecords;
+    }
+
+    public void setMaxBufferRecords(Integer maxBufferRecords) {
+        this.maxBufferRecords = maxBufferRecords;
+    }
+
+    public String getMaxBufferTime() {
+        return maxBufferTime;
+    }
+
+    public void setMaxBufferTime(String maxBufferTime) {
+        this.maxBufferTime = maxBufferTime;
     }
 
     public String getAssumeRoleArn() {
