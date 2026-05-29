@@ -1,181 +1,264 @@
-# data-platform-service
+# Data Platform Service
 
-Data platform for streaming events into **Apache Iceberg** tables registered in the **AWS Glue Data Catalog**, with data files stored in **S3**.
+A multi-module Maven application that ingests product data events from Kafka, buffers and groups them, and lands them in an analytics-ready lakehouse format on AWS.
 
-For architecture and flow diagrams, see [docs/architecture.md](docs/architecture.md).
+![Data Platform Architecture](docs/data-platform-high-level-diagram.png)
 
-### Iceberg, Glue, S3 buckets, and metadata
+### Storage and catalog
 
-1. **Schema definitions** — Under [`catalog-data/`](catalog-data/), each subfolder is a Glue **namespace** (for example `global`, `fraud-detection`). Each `*.json` file describes one event type: Iceberg **table name**, S3 **bucket suffix** (`bucketName`), partition strategy, and column fields.
+**Apache Iceberg** is the open table format used for all event data. Iceberg manages table metadata (schema, partitions, file manifests) as a layer on top of object storage. The events-processor appends grouped events as Parquet files and commits Iceberg metadata atomically, so query engines always see a consistent snapshot of the table. Tables are partitioned by `event_time` (day or hour, as defined in the catalog schema).
 
-2. **S3 buckets (Terraform)** — [`infrastructure/terraform/events-data-bucket.tf`](infrastructure/terraform/events-data-bucket.tf) scans `catalog-data` and creates one bucket per schema, named `{namespace}-{bucketName}` (for example `global-api-events`). Bucket policies allow the Glue catalog IAM role to read and write objects.
+**AWS Glue** is the central catalog service. It registers Iceberg namespaces and tables so that engines such as Athena and Spark can discover schemas, S3 locations, and partitions without scanning raw files. When a product team onboards a new event type, the platform creates or updates the corresponding Glue/Iceberg table from the schema defined in `catalog-data`.
 
-3. **Glue catalog and Iceberg table metadata** — The **infrastructure** module (`AWSGlueCatalogServiceImpl`, invoked from `CatalogSchemaHandler` Lambda or locally) reads the same JSON files and uses Iceberg’s **GlueCatalog** with **S3FileIO**. It creates the Glue database (namespace) if needed, then creates the Iceberg table and initial metadata under `s3://{namespace}-{eventName}/` so engines such as Athena or QuickSight can discover the table.
+**Amazon S3** is the durable storage layer. Parquet data files are written under each table's bucket location (for example, `s3://{bucketName}/data/`), and Iceberg metadata files live in the same bucket. S3 provides high durability, virtually unlimited scale, and pay-as-you-go storage that fits event workloads with varying retention needs.
 
-4. **Runtime data and commits** — **events-processor** stages Parquet files under the table location, then **appends** new data files to the Iceberg table (snapshot metadata) when commit events are processed on the `dp-commit-raw-data-events` Kafka topic.
+#### Why Iceberg?
 
-Provision buckets with Terraform first, apply catalog schemas, then run the processor so file writes and metadata commits stay aligned with the Glue catalog.
+| Advantage | Description |
+|-----------|-------------|
+| **Schema evolution** | Add, rename, or drop columns without rewriting existing data. The `apply-catalog-schema` Lambda merges new fields from `catalog-data` into live Glue tables. |
+| **Hidden partitioning** | Partition specs are stored in table metadata; queries filter on `event_time` without callers needing to know the physical folder layout. |
+| **ACID commits** | Appends are committed atomically via Iceberg snapshots, so readers never see partial or corrupt batches. |
+| **Time travel & snapshots** | Historical table states are retained in metadata, enabling audit queries and rollback without duplicating data files. |
+| **Format-agnostic reads** | The same table can be queried by Athena, Spark, Trino, and other engines through the Glue catalog. |
+| **Efficient small-file handling** | Metadata tracks every data file, enabling compaction and pruning strategies as tables grow. |
+| **Open standard** | Iceberg is engine-neutral and avoids vendor lock-in compared to proprietary table formats. |
 
----
+#### One S3 bucket per event type
 
-Maven multi-module project for the data platform event pipeline.
+Each product team event type is stored in its **own dedicated S3 bucket**, configured via the `bucketName` field in the catalog schema. This one-bucket-per-table model provides:
 
-## Modules
+1. **Separation from other tables** — Data for each event type is isolated in its own bucket, avoiding cross-table access patterns and simplifying ownership boundaries between product teams.
+2. **Independent lifecycle policies** — Retention, transition to S3 Infrequent Access or Glacier, and expiration rules can be set per bucket to match each event type's compliance or cost requirements.
+3. **Regional replication for compliance and backup** — Buckets can be replicated to another AWS region independently via S3 Cross-Region Replication (CRR), supporting disaster recovery and data-residency rules without affecting other event types.
+4. **Easy data discard** — When a table is decommissioned, emptying or deleting a single bucket removes all associated data without touching other teams' events.
+5. **Granular IAM and access control** — Bucket policies and IAM roles can grant read or write access per event type, so teams only reach the data they own.
+6. **Independent cost tracking** — S3 storage, request, and transfer costs are attributed to a single bucket per table, making chargeback and budget monitoring straightforward.
+7. **Per-bucket encryption** — SSE-S3, SSE-KMS, or bucket-specific KMS keys can be applied where a team requires stronger encryption or key rotation.
+8. **Isolated operational changes** — Versioning, logging, inventory, and event notifications can be enabled or tuned per bucket without impacting other tables.
+9. **Safer schema or pipeline migrations** — New buckets can be provisioned for a redesigned event type while the old bucket is drained on its own schedule.
+10. **Compliance-friendly boundaries** — Sensitive event types (for example, fraud or PII-heavy streams) can live in buckets with stricter policies, replication, and audit settings than general-purpose events.
 
-| Module | Role |
-|--------|------|
-| **events-processor** | Main Micronaut application: Kafka Streams topology (ingest and group raw events), Kafka consumers, and persistence logic. Run this for normal processing. |
-| **events-producer** | Companion Micronaut app for local testing: HTTP API that publishes sample events to Kafka (not required for production). |
-| **infrastructure** | Shaded JAR for catalog setup: applies `catalog-data` schemas to AWS Glue / Iceberg and is deployed via Terraform (S3 buckets, IAM, Lambda). |
+The **infrastructure** Terraform module reads `bucketName` values from `catalog-data` and provisions these buckets automatically when a new event type is onboarded.
 
-## Prerequisites
+## Architecture overview
 
-- **JDK 21** (matches `maven.compiler.source` / `target` in the root POM).
-- **Apache Maven** 3.9+.
-- **Apache Kafka** reachable at `localhost:9092` (or override bootstrap servers in configuration). Install a Kafka distribution and use its `bin/` scripts, or set `KAFKA_HOME` and prefix paths as `./bin/...` from that directory.
+1. **events-producer** (or external producers) publish JSON events to the `dp-raw-events` Kafka topic.
+2. **events-processor** runs a Kafka Streams topology that buffers events by key and publishes grouped batches to `dp-raw-grouped-events`.
+3. The processor converts grouped events to Iceberg records, stages Parquet files in S3, and emits commit messages on `dp-commit-raw-data-events`.
+4. A second consumer commits the staged files to the target Iceberg table via the Glue catalog.
+5. **catalog-data** JSON schemas define namespaces, tables, S3 buckets, and event fields. The **serverless** Lambda applies those schemas to Glue; **infrastructure** Terraform provisions the backing S3 buckets and IAM roles.
 
-## Build
+## Maven modules
 
-From the repository root:
+| Module | Description |
+|--------|-------------|
+| **events-producer** | Micronaut HTTP service for local and test use. Exposes `/events/generate` to publish sample events to the `dp-raw-events` Kafka topic. |
+| **events-processor** | Core ingestion service. Consumes from Kafka, runs the buffering/grouping stream topology, writes Parquet to S3, and commits Iceberg metadata through AWS Glue. |
+| **serverless** | AWS Lambda functions and Terraform for deploying catalog-management workloads. The `apply-catalog-schema` Lambda reads schema files from `catalog-data` and creates or updates Glue/Iceberg tables. |
+| **infrastructure** | Terraform for shared AWS resources: S3 data buckets (derived from `catalog-data`), Glue catalog IAM roles, and Athena query workgroups. |
 
-```bash
-mvn clean verify
+## Catalog data — onboarding product events
+
+Product teams onboard new event types by adding a JSON schema under `catalog-data/`. Each event type maps to one Iceberg table.
+
+### Directory layout
+
+```
+catalog-data/
+└── {namespace}/
+    └── {tableName}.json
 ```
 
-Build a single module:
+Examples in this repository:
 
-```bash
-mvn clean package -pl events-processor
-mvn clean package -pl events-producer
+- `catalog-data/global/api_events.json`
+- `catalog-data/fraud_detection/incident_events.json`
+
+### Schema file format
+
+```json
+{
+  "namespace": "global",
+  "tableName": "api_events",
+  "bucketName": "global-api-events",
+  "partitionType": "DAY",
+  "fields": [
+    {
+      "id": 10,
+      "name": "user_id",
+      "dataType": "STRING",
+      "deprecated": false
+    }
+  ]
+}
 ```
 
-Runnable JARs are produced under each module’s `target/` directory (Micronaut parent packaging).
+| Field | Description |
+|-------|-------------|
+| `namespace` | Logical grouping for the event (also used as the Glue/Iceberg namespace). |
+| `tableName` | Event type name. Must match the `type` field in published Kafka events. |
+| `bucketName` | S3 bucket where Parquet data is stored. Provisioned by the **infrastructure** Terraform module. |
+| `partitionType` | `DAY` or `HOUR` — partitions the table on `event_time`. |
+| `fields` | Custom event attributes. Supported `dataType` values: `STRING`, `INT`, `LONG`, `TIMESTAMP`, `DATE`. |
 
-## Run
+The platform automatically adds these columns to every table: `event_id`, `tenant_id`, `load_time`, and `event_time`. Product schemas should only define business-specific fields.
 
-Start **Zookeeper** (if your Kafka version needs it) and **Kafka** before the apps.
+### Onboarding steps
 
-**events-processor** (port **8082** by default):
+1. **Add the schema file** — Create `catalog-data/{namespace}/{tableName}.json` following the format above. Use unique field `id` values (10 and above).
+2. **Provision infrastructure** — Apply the **infrastructure** Terraform module. S3 buckets are created automatically from `bucketName` values in the catalog JSON files.
+3. **Apply the Glue schema** — Build and deploy the **serverless** module, then invoke the `apply-catalog-schema-{env}` Lambda with:
+
+   ```json
+   {
+     "namespace": "global",
+     "tableName": "api_events"
+   }
+   ```
+
+   The Lambda creates the Glue namespace and Iceberg table (or adds new columns if the table already exists).
+4. **Publish events** — Send events to Kafka with matching `namespace` and `type` values (see [Simulating events](#simulating-events) below).
+
+## Running events-processor
+
+### Prerequisites
+
+- Java 21
+- Maven
+- A running Kafka cluster with topics: `dp-raw-events`, `dp-raw-grouped-events`, `dp-commit-raw-data-events` (auto-create is disabled; create these before starting the processor)
+- AWS credentials with permission to assume the Glue catalog role
+- Catalog schema files available locally (see `CATALOG_DATA_DIR`)
+
+### Local development (dev profile)
+
+The `application-dev.yml` profile provides local defaults for Kafka and catalog paths:
 
 ```bash
-cd events-processor && mvn mn:run
+mvn -pl events-processor mn:run -Dmicronaut.environments=dev
 ```
 
-Or from the root:
+Review and adjust paths in `events-processor/src/main/resources/application-dev.yml` before running.
+
+### Production / custom configuration
+
+Run with environment variables that map to `application.yml`:
 
 ```bash
+export KAFKA_BROKERS="broker1:9092,broker2:9092"
+export STREAM_APP_NAME="dp-data-process-app"
+export STREAM_STATE_DIR="/var/lib/kafka-streams/state"
+export MAX_POLL_RECORDS="500"
+export CATALOG_DATA_DIR="/path/to/catalog-data"
+export GLUE_ASSUME_ROLE_ARN="arn:aws:iam::ACCOUNT:role/dp-glue-catalog-role-dev"
+export GLUE_AWS_REGION="ap-southeast-2"
+
 mvn -pl events-processor mn:run
 ```
 
-**events-producer** (port **8081**, optional for load-style tests):
+### Required environment variables
 
-```bash
-mvn -pl events-producer mn:run
-```
+| Variable | Description |
+|----------|-------------|
+| `KAFKA_BROKERS` | Comma-separated Kafka bootstrap servers. |
+| `STREAM_APP_NAME` | Kafka Streams `application.id` (must be unique per deployment). |
+| `STREAM_STATE_DIR` | Local directory for Kafka Streams state stores. |
+| `MAX_POLL_RECORDS` | Maximum records per poll for the stream consumer. |
+| `CATALOG_DATA_DIR` | Absolute path to the `catalog-data` directory. |
+| `GLUE_ASSUME_ROLE_ARN` | IAM role ARN assumed to access Glue and S3. |
+| `GLUE_AWS_REGION` | AWS region for Glue and S3 clients. |
 
-Example producer HTTP call (see `events-producer` `DataResource`):
+### Optional environment variables
 
-```text
-GET http://localhost:8081/events/generate?count=5
-```
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MAX_BUFFER_RECORDS` | `1000` | Maximum events buffered per key before flushing a group. |
+| `MAX_BUFFER_TIME` | `PT5M` | Maximum time (ISO-8601 duration) to hold events in the buffer before flushing. |
 
-Note: the test producer’s `DPEventClient` publishes to the topic **`dp-app-events`**. The processor’s stream **reads `dp-raw-events`**. For end-to-end tests that match the processor topology, either publish to `dp-raw-events` (for example with the console producer below) or align topics in code if you wire `dp-app-events` into the same pipeline.
+The service listens on port **8082** by default.
 
-## Configuration
+## Infrastructure deployment steps 
 
-### events-processor
-
-Primary file: `events-processor/src/main/resources/application.yml`.
-
-| Area | Purpose |
-|------|---------|
-| `micronaut.server.port` | HTTP server port (default **8082**). |
-| `kafka.bootstrap.servers` | Kafka cluster (default **localhost:9092**). |
-| `kafka.consumers.default` / `kafka.streams.default` | Consumer and Kafka Streams settings (application id, EOS, state directory, etc.). |
-| `kafka.executors.consumer.default.allow.auto.create.topics` | **false** — topics must exist before the app starts. |
-| `app.platform.data.folderPath` | Local warehouse / data folder used by the processing pipeline (default points at a `file://` path under the developer machine; **change this** for your environment). |
-
-Environment-specific values can be overridden with Micronaut’s usual mechanisms (environment variables, `MICRONAUT_ENVIRONMENTS`, external `application.yml`, etc.).
-
-### events-producer
-
-Primary file: `events-producer/src/main/resources/application.properties`.
-
-| Property | Purpose |
-|----------|---------|
-| `micronaut.server.port` | Default **8081**. |
-| `kafka.bootstrap.servers` | Default **localhost:9092**. |
-
-## Kafka topics used by events-processor
-
-The stream and consumers expect these topics (create them explicitly because auto-create is disabled):
-
-| Topic | Usage |
-|-------|--------|
-| `dp-raw-events` | Source topic for the Kafka Streams pipeline. |
-| `dp-raw-grouped-events` | Output of the grouping stage; consumed by `IngestRawDataConsumer`. |
-| `dp-commit-raw-data-events` | Consumed by `CommitRawDataConsumer` for commit / persistence. |
-
-## Kafka CLI examples
-
-Run these from your Kafka installation directory (adjust if your scripts live elsewhere). Replace `localhost:9092` if your broker differs.
-
-### Create topics
-
-```bash
-./bin/kafka-topics.sh --create --topic dp-raw-events --bootstrap-server localhost:9092
-./bin/kafka-topics.sh --create --topic dp-raw-grouped-events --bootstrap-server localhost:9092
-./bin/kafka-topics.sh --create --topic dp-commit-raw-data-events --bootstrap-server localhost:9092
-```
-
-### Consume (inspect outbound topics)
-
-```bash
-./bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic dp-raw-grouped-events
-```
-
-```bash
-./bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic dp-commit-raw-data-events
-```
-
-### Produce keyed messages to `dp-raw-events`
-
-Key/value pairs use `:` as the separator (`parse.key=true`, `key.separator=:`).
-
-```bash
-./bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic dp-raw-events --property parse.key=true --property key.separator=:
-```
-
-After the producer starts, paste lines such as:
-
-```text
-1:{"type": "app_events", "eventTime": "2026-05-08 10:00:01", "tenantId": "tenant1", "attributes": {"opType": "LOGIN", "userId": "user@user", "result": "SUCCESS"}}
-2:{"type": "app_events", "eventTime": "2026-05-08 10:00:02", "tenantId": "tenant1", "attributes": {"opType": "PAYMENT_START", "userId": "user@user", "result": "SUCCESS"}}
-3:{"type": "app_events", "eventTime": "2026-05-08 10:00:03", "tenantId": "tenant1", "attributes": {"opType": "LOGOUT", "userId": "user@user", "result": "SUCCESS"}}
-```
-
-Then stop the producer with **Ctrl+C** when finished.
-
-
-### Get session token
-
-```
-export AWS_ACCESS_KEY_ID=
-export AWS_SECRET_ACCESS_KEY=
-export AWS_SESSION_TOKEN=
-```
-
-```aws sts get-session-token --duration-seconds 3600
-```
+### Prerequisites<br/>
+Set AWS credential by environment variables
 
 ``terraform init -backend-config 'region=ap-southeast-2' -backend-config 'bucket=tfstate-resources-128779316957-ap-southeast-2-an' -lock=true``
 
-### Setup workspace
-``terraform workspace list``
-``terraform workspace select dev``
-``terraform workspace new dev``
+### Setup & select workspace
+```terraform workspace select -or-create dev```
 
 ### Plan resources
-``terraform plan -var-file tfvars/dev.tfvars -out deployment.plan``
+```terraform plan -var-file tfvars/dev.tfvars -out deployment.tfplan```
 
-``terraform apply deployment.plan``
+### Apply resources
+```terraform apply deployment.tfplan```
+
+
+## Simulating events
+
+### Using events-producer
+
+The **events-producer** module is a lightweight Micronaut app that publishes sample `api_events` to Kafka.
+
+1. Start Kafka locally (ensure `dp-raw-events` topic exists).
+2. Run the producer:
+
+   ```bash
+   mvn -pl events-producer mn:run
+   ```
+
+3. Generate events (default: 5 events):
+
+   ```bash
+   curl "http://localhost:8081/events/generate?count=10"
+   ```
+
+   The producer runs on port **8081** and publishes to `dp-raw-events` with random sample data for the `global` / `api_events` table.
+
+### Using Kafka console producer
+
+Publish a single event directly to the `dp-raw-events` topic. The message key is typically the tenant ID.
+
+Create the required topics (if they do not exist):
+
+```bash
+for topic in dp-raw-events dp-raw-grouped-events dp-commit-raw-data-events; do
+  kafka-topics.sh --create --topic "$topic" \
+    --bootstrap-server localhost:9092 \
+    --partitions 3 --replication-factor 1
+done
+```
+
+Publish an event to `dp-raw-events`:
+
+```bash
+kafka-console-producer.sh --bootstrap-server localhost:9092 \
+  --topic dp-raw-events \
+  --property "parse.key=true" \
+  --property "key.separator=:" <<'EOF'
+ACCOUNT-1:{"namespace":"global","type":"api_events","tenantId":"ACCOUNT-1","eventTime":"2026-05-30 12:00:00","attributes":{"user_id":"USER-1","op_type":"UserLogin","result":"SUCCESS"}}
+EOF
+```
+
+For the `fraud_detection` / `incident_events` table:
+
+```bash
+kafka-console-producer.sh --bootstrap-server localhost:9092 \
+  --topic dp-raw-events \
+  --property "parse.key=true" \
+  --property "key.separator=:" <<'EOF'
+ACCOUNT-1:{"namespace":"fraud_detection","type":"incident_events","tenantId":"ACCOUNT-1","eventTime":"2026-05-30 12:00:00","attributes":{"user_id":"USER-1","source":"web","ipaddress":"10.0.0.1","result":"BLOCKED"}}
+EOF
+```
+
+Event payload fields:
+
+| Field | Description |
+|-------|-------------|
+| `namespace` | Must match a folder under `catalog-data/`. |
+| `type` | Must match the schema file name (without `.json`). |
+| `tenantId` | Tenant or account identifier (also used as the Kafka message key). |
+| `eventTime` | Event timestamp in `yyyy-MM-dd HH:mm:ss` UTC format. |
+| `attributes` | Key-value map of custom fields defined in the catalog schema. |
+
+Ensure **events-processor** is running so events are buffered, written to S3, and committed to Iceberg.
