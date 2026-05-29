@@ -1,5 +1,6 @@
 package com.dataplatform.processor.consumers;
 
+import com.dataplatform.processor.config.PlatformDataConfig;
 import com.dataplatform.processor.consumers.models.RawDataEvent;
 import com.dataplatform.processor.consumers.tranformers.JsonSerde;
 import io.micronaut.configuration.kafka.streams.ConfiguredStreamBuilder;
@@ -12,12 +13,17 @@ import org.apache.kafka.streams.state.StoreBuilder;
 import org.apache.kafka.streams.state.Stores;
 
 import java.util.*;
-import java.util.function.Supplier;
 
 @Factory
 public class ProcessRawDataStreamTopology {
 
     public final String FILE_STORE_NAME = "raw-event-local-store";
+
+    private final PlatformDataConfig platformDataConfig;
+
+    public ProcessRawDataStreamTopology(PlatformDataConfig platformDataConfig) {
+        this.platformDataConfig = platformDataConfig;
+    }
 
     @Context
     public KStream<String, List<RawDataEvent>> groupRawDataStream(ConfiguredStreamBuilder builder) {
@@ -33,7 +39,10 @@ public class ProcessRawDataStreamTopology {
 
         KStream<String, RawDataEvent> stream = builder.stream("dp-raw-events", Consumed.with(Serdes.String(), dataEventSerde));
         var transformedStream = stream.process(
-                () -> new BufferRecordsProcessor(FILE_STORE_NAME, 1000, "5m"),
+                () -> new BufferRecordsProcessor(
+                        FILE_STORE_NAME,
+                        platformDataConfig.getMaxBufferRecords(),
+                        platformDataConfig.getMaxBufferTime()),
                 FILE_STORE_NAME);
         transformedStream.to("dp-raw-grouped-events", Produced.with(Serdes.String(), dataEventListSerde));
         return transformedStream;

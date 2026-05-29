@@ -1,8 +1,7 @@
 locals {
   catalog_data_path = "${path.module}/../../catalog-data"
   table_names       = [
-    for file in fileset(local.catalog_data_path, "**/*.json") :
-    "${split("/", file)[0]}-${jsondecode(file("${local.catalog_data_path}/${file}")).bucketName}"
+    for file in fileset(local.catalog_data_path, "**/*.json") : "${jsondecode(file("${local.catalog_data_path}/${file}")).bucketName}"
   ]
   bucket_names      = toset(local.table_names)
 }

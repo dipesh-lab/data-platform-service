@@ -57,8 +57,6 @@ public class IngestRawDataConsumer {
                 var namespace = events.getFirst().namespace();
                 var eventType = events.getFirst().type();
                 log.info("Received total {} grouped events for type {}, namespace {}", events.size(), eventType, namespace);
-                events.forEach(event -> log.info("Type {} - {}, tenant {}, time {}, attrs {}",
-                        event.type(), event.namespace(), event.tenantId(), event.eventTime(), event.attributes()));
 
                 var records = toGenericRecords(namespace, eventType, events);
                 var storedRawData = ingestRawDataService.prepare(namespace, eventType, records);

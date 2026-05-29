@@ -37,12 +37,12 @@ public class BufferRecordsProcessor implements Processor<String, RawDataEvent, S
         var event = record.value();
         if (null != record.value() && StringUtils.isNotEmpty(event.type())) {
             var existing = kvStore.get(event.type());
-            var list = null != existing ? new ArrayList<RawDataEvent>(existing) : new ArrayList<RawDataEvent>(5);
+            var list = null != existing ? new ArrayList<RawDataEvent>(existing) : new ArrayList<RawDataEvent>(1);
             list.add(event);
-            log.info("Data Event added to buffer");
             kvStore.put(event.type(), list);
+            log.info("New event of [{}:{}] type added to buffer", event.namespace(), event.type());
             if (list.size() >= maxBufferRecords) {
-                log.info("Buffered records reached batch size {}, forwarding", maxBufferRecords);
+                log.info("Buffered records reached to limit {}", maxBufferRecords);
                 kvStore.delete(event.type());
                 var copiedList = List.copyOf(list);
                 log.info("Total {} events forwarding", copiedList.size());

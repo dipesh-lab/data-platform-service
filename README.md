@@ -2,6 +2,8 @@
 
 Data platform for streaming events into **Apache Iceberg** tables registered in the **AWS Glue Data Catalog**, with data files stored in **S3**.
 
+For architecture and flow diagrams, see [docs/architecture.md](docs/architecture.md).
+
 ### Iceberg, Glue, S3 buckets, and metadata
 
 1. **Schema definitions** — Under [`catalog-data/`](catalog-data/), each subfolder is a Glue **namespace** (for example `global`, `fraud-detection`). Each `*.json` file describes one event type: Iceberg **table name**, S3 **bucket suffix** (`bucketName`), partition strategy, and column fields.
@@ -175,3 +177,5 @@ export AWS_SESSION_TOKEN=
 
 ### Plan resources
 ``terraform plan -var-file tfvars/dev.tfvars -out deployment.plan``
+
+``terraform apply deployment.plan``

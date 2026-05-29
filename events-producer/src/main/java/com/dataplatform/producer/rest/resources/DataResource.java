@@ -22,6 +22,7 @@ public class DataResource {
 
     private final List<String> accountIds = List.of("ACCOUNT-1", "ACCOUNT-3", "ACCOUNT-5");
     private final List<String> userIds = List.of("USER-1", "USER-2", "USER-3", "USER-4", "USER-5");
+    private final List<String> opTypes = List.of("SamlLogin", "GetDashboardStats", "OAuthFlow", "UserLogin", "GetIntegrations");
     private final Random random = new Random();
 
     private final DPEventClient eventClient;
@@ -37,12 +38,13 @@ public class DataResource {
         IntStream.iterate(0, i -> i + 1).limit(eventCount).forEach(i -> {
             var accountId = accountIds.get(random.nextInt(3));
             var userId = userIds.get(random.nextInt(5));
+            var opType = opTypes.get(random.nextInt(5));
             var event = DataEvent.builder()
                     .namespace("global")
                     .tenantId(accountId)
                     .type("api_events")
                     .eventTime(Instant.now())
-                    .attributes(Map.of("user_id", userId, "op_type", "GetIntegrations", "result", "SUCCESS"))
+                    .attributes(Map.of("user_id", userId, "op_type", opType, "result", "SUCCESS"))
                     .build();
             eventClient.generateAppEvent(accountId, event).subscribe();
         });

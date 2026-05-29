@@ -69,4 +69,8 @@ public class CachedCatalogTableRegistry {
             IOUtils.closeQuietly(pair.getRight());
         };
     }
+
+    public static void main(String[] arg) {
+
+    }
 }

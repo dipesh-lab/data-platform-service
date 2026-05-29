@@ -15,5 +15,5 @@ app:
       catalogDir: "/home/tom/projects/javaworkspace/data-platform-service/catalog-data"
       assumeRoleArn: "arn:aws:iam::128779316957:role/dp-glue-catalog-role-dev"
       region: "ap-southeast-2"
-      maxBufferRecords: 100
+      maxBufferRecords: 1000
       maxBufferTime: "PT5M"
