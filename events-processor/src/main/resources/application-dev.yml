@@ -16,4 +16,5 @@ app:
       assumeRoleArn: "arn:aws:iam::128779316957:role/dp-glue-catalog-role-dev"
       region: "ap-southeast-2"
       maxBufferRecords: 1000
-      maxBufferTime: "PT5M"
+      maxBufferTime: "PT2M"
+      preCommitMergeWindow: "PT3M"

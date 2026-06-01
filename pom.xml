@@ -10,7 +10,7 @@
     <packaging>pom</packaging>
 
     <modules>
-        <module>events-producer</module>
+        <module>events-simulator</module>
         <module>events-processor</module>
         <module>infrastructure</module>
         <module>serverless</module>
@@ -36,6 +36,9 @@
         <awssdk.verion>2.44.0</awssdk.verion>
         <aws-lambda-java-core.version>1.2.3</aws-lambda-java-core.version>
         <iceberg-core.version>1.10.1</iceberg-core.version>
+        <hadoop.version>3.4.1</hadoop.version>
+        <commons-collections4.version>4.5.0</commons-collections4.version>
+        <commons-lang3.version>3.20.0</commons-lang3.version>
         <parquet-column.version>1.16.0</parquet-column.version>
         <lombok.version>1.18.36</lombok.version>
         <logback-classic.version>1.5.32</logback-classic.version>

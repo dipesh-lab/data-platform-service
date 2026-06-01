@@ -41,7 +41,8 @@ app:
   platform:
     data:
       catalogDir: "${CATALOG_DATA_DIR}"
-      maxBufferRecords: "${MAX_BUFFER_RECORDS:1000}"
-      maxBufferTime: "${MAX_BUFFER_TIME:PT5M}"
+      maxBufferRecords: "${MAX_BUFFER_RECORDS}"
+      maxBufferTime: "${MAX_BUFFER_TIME}"
+      preCommitMergeWindow: "${PRE_COMMIT_MERGE_WINDOW}"
       assumeRoleArn: "${GLUE_ASSUME_ROLE_ARN}"
       region: "${GLUE_AWS_REGION}"

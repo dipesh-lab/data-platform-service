@@ -8,6 +8,7 @@ public class PlatformDataConfig {
     private String catalogDir;
     private Integer maxBufferRecords;
     private String maxBufferTime;
+    private String preCommitMergeWindow;
     private String assumeRoleArn;
     private String region;
 
@@ -33,6 +34,14 @@ public class PlatformDataConfig {
 
     public void setMaxBufferTime(String maxBufferTime) {
         this.maxBufferTime = maxBufferTime;
+    }
+
+    public String getPreCommitMergeWindow() {
+        return preCommitMergeWindow;
+    }
+
+    public void setPreCommitMergeWindow(String preCommitMergeWindow) {
+        this.preCommitMergeWindow = preCommitMergeWindow;
     }
 
     public String getAssumeRoleArn() {

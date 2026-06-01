@@ -29,10 +29,15 @@ public class JsonSerde<T> implements Serde<T> {
     @Override
     public Deserializer<T> deserializer() {
         return (topic, data) -> {
+            if (data == null || data.length == 0) {
+                return null;
+            }
             try {
                 return JsonUtils.getMapper().readValue(data, clazz);
             } catch (Exception e) {
-                throw new RuntimeException(e);
+                log.error("Failed to deserialize {} from topic {}", clazz.getSimpleName(), topic, e);
+                throw new RuntimeException(
+                        "Failed to deserialize " + clazz.getSimpleName() + " from topic " + topic, e);
             }
         };
     }
