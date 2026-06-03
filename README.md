@@ -4,6 +4,12 @@ A multi-module Maven application that ingests product data events from Kafka, bu
 
 ![Data Platform Architecture](docs/data-platform-high-level-diagram.png)
 
+## Visualize data using Metabase
+
+#### Display simulated api_events
+
+![Api Events statistics](docs/api-events-stats.png)
+
 ### Storage and catalog
 
 **Apache Iceberg** is the open table format used for all event data. Iceberg manages table metadata (schema, partitions, file manifests) as a layer on top of object storage. The events-processor appends grouped events as Parquet files and commits Iceberg metadata atomically, so query engines always see a consistent snapshot of the table. Tables are partitioned by `event_time` (day or hour, as defined in the catalog schema).
