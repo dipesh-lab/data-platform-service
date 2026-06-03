@@ -45,27 +45,27 @@ The **infrastructure** Terraform module reads `bucketName` values from `catalog-
 
 The ingestion pipeline uses **two Kafka Streams topologies** plus two Micronaut Kafka consumers. Staged Parquet files are **pre-commit merged** before they are registered in Iceberg, which reduces small-file overhead in Athena and survives task restarts via durable Kafka staging.
 
-1. **events-producer** (or external producers) publish JSON events to the `dp-raw-events` Kafka topic.
-2. **Topology 1 — event grouping** (`ProcessRawDataStreamTopology`) buffers events by `namespace|type` and publishes grouped batches to `dp-raw-grouped-events` when either **2 minutes** elapse or **2,000 records** accumulate (whichever comes first).
-3. **IngestRawDataConsumer** converts each grouped batch to Iceberg records, writes a **staged Parquet file** to S3 via `prepare()`, and publishes a `StoredRawData` message to `dp-catalog-written-events` (message key: `namespace|type`). Files are **not yet visible in Athena** at this stage.
-4. **Topology 2 — pre-commit merge** (`ProcessCatalogWrittenStreamTopology`) accumulates `StoredRawData` references per `namespace|type` in a Kafka Streams state store. Every **3 minutes**, it calls `mergeStagedFiles()` to coalesce staged Parquet files into one file, deletes the small staging files from S3, and forwards the merged result to `dp-commit-raw-data-events`.
-5. **CommitRawDataConsumer** receives the merged `StoredRawData` and commits the file to the Iceberg table via the Glue catalog (`writeData()`). Data becomes **queryable in Athena** after this commit.
+1. **events-simulator** (or external producers) publish JSON events to the `dp-data-events` Kafka topic.
+2. **Topology 1 — event grouping** (`ProcessDataEventsTopology`) buffers events by `namespace|type` and publishes grouped batches to `dp-store-data-events` when either **2 minutes** elapse or **2,000 records** accumulate (whichever comes first).
+3. **StoreDataEventsConsumer** converts each grouped batch to Iceberg records, writes a **staged Parquet file** to S3 via `storeData()`, and publishes a `StoredData` message to `dp-merge-data-events` (message key: `namespace|type`). Files are **not yet visible in Athena** at this stage.
+4. **Topology 2 — pre-commit merge** (`MergeDataEventsTopology`) accumulates `StoredData` references per `namespace|type` in a Kafka Streams state store. Every **3 minutes**, it calls `mergeStoredFiles()` to coalesce staged Parquet files into one file and forwards the merged result to `dp-commit-data-events`.
+5. **CommitDataEventsConsumer** receives the merged `StoredData` and commits the file to the Iceberg table via the Glue catalog (`commitStageFile()`). Data becomes **queryable in Athena** after this commit.
 6. **catalog-data** JSON schemas define namespaces, tables, S3 buckets, and event fields. The **serverless** Lambda applies those schemas to Glue; **infrastructure** Terraform provisions the backing S3 buckets and IAM roles.
 
 ### Ingest pipeline diagram
 
 ```
 dp-data-events
-    │  Topology 1: buffer (2 min / 2000 events)
+    │  Topology 1: ProcessDataEventsTopology (2 min / 2000 events)
     ▼
 dp-store-data-events
-    │  IngestRawDataConsumer.prepare() → staged Parquet on S3
+    │  StoreDataEventsConsumer.storeData() → staged Parquet on S3
     ▼
 dp-merge-data-events
-    │  Topology 2: pre-commit merge window (3 min)
+    │  Topology 2: MergeDataEventsTopology (3 min pre-commit merge)
     ▼
 dp-commit-data-events
-    │  CommitRawDataConsumer.writeData() → Iceberg commit
+    │  CommitDataEventsConsumer.commitStageFile() → Iceberg commit
     ▼
 Athena / Glue (queryable)
 ```
@@ -78,7 +78,7 @@ Athena / Glue (queryable)
 | Pre-commit merge (Topology 2) | 3 minutes | `PRE_COMMIT_MERGE_WINDOW` (default `PT3M`) |
 | Parquet merge + Iceberg commit | ~30–60 seconds | — |
 
-Typical end-to-end latency from event ingest to Athena queryability is **~5 minutes** under normal load. Use `namespace|type` as the Kafka key on `dp-catalog-written-events` so all staging for an event type is merged in one window per partition.
+Typical end-to-end latency from event ingest to Athena queryability is **~5 minutes** under normal load. Use `namespace|type` as the Kafka key on `dp-merge-data-events` so all staging for an event type is merged in one window per partition.
 
 ### Pre-commit merge vs Iceberg compaction
 
@@ -92,7 +92,7 @@ Typical end-to-end latency from event ingest to Athena queryability is **~5 minu
 
 | Module               | Description |
 |----------------------|-------------|
-| **events-simulator** | Micronaut HTTP service for local and test use. Exposes `/events/generate` to publish sample events to the `dp-raw-events` Kafka topic. |
+| **events-simulator** | Micronaut HTTP service for local and test use. Exposes `/events/generate` to publish sample events to the `dp-data-events` Kafka topic. |
 | **events-processor** | Core ingestion service. Runs two Kafka Streams topologies (event grouping and pre-commit merge), stages Parquet on S3, merges staged files before catalog commit, and registers data in Iceberg through AWS Glue. |
 | **serverless**       | AWS Lambda functions and Terraform for deploying catalog-management workloads. The `apply-catalog-schema` Lambda reads schema files from `catalog-data` and creates or updates Glue/Iceberg tables. |
 | **infrastructure**   | Terraform for shared AWS resources: S3 data buckets (derived from `catalog-data`), Glue catalog IAM roles, and Athena query workgroups. |
@@ -165,7 +165,7 @@ The platform automatically adds these columns to every table: `event_id`, `tenan
 
 - Java 21
 - Maven
-- A running Kafka cluster with topics: `dp-raw-events`, `dp-raw-grouped-events`, `dp-catalog-written-events`, and `dp-commit-raw-data-events` (auto-create is disabled; create these before starting the processor)
+- A running Kafka cluster with topics: `dp-data-events`, `dp-store-data-events`, `dp-merge-data-events`, and `dp-commit-data-events` (auto-create is disabled; create these before starting the processor)
 - AWS credentials with permission to assume the Glue catalog role
 - Catalog schema files available locally (see `CATALOG_DATA_DIR`)
 
@@ -228,41 +228,24 @@ The service listens on port **8082** by default.
 
 ### Kafka topics
 
-| Topic                       | Producer                    | Consumer | Payload |
-|-----------------------------|-----------------------------|----------|---------|
-| `dp-data-events`            | events-simulator / external | Topology 1 | Single `RawDataEvent` |
-| `dp-raw-grouped-events`     | Topology 1                  | IngestRawDataConsumer | `List<RawDataEvent>` |
-| `dp-catalog-written-events` | IngestRawDataConsumer       | Topology 2 | `StoredRawData` (staged Parquet metadata) |
-| `dp-commit-raw-data-events` | Topology 2                  | CommitRawDataConsumer | `StoredRawData` (merged, ready to commit) |
+| Topic | Producer | Consumer | Payload |
+|-------|----------|----------|---------|
+| `dp-data-events` | events-simulator / external | Topology 1 (`ProcessDataEventsTopology`) | Single `DataEvent` |
+| `dp-store-data-events` | Topology 1 | `StoreDataEventsConsumer` | `List<DataEvent>` |
+| `dp-merge-data-events` | `StoreDataEventsConsumer` | Topology 2 (`MergeDataEventsTopology`) | `StoredData` (staged Parquet metadata) |
+| `dp-commit-data-events` | Topology 2 | `CommitDataEventsConsumer` | `StoredData` (merged, ready to commit) |
 
 Create all topics before starting the processor:
 
 ```bash
-for topic in dp-raw-events dp-raw-grouped-events dp-catalog-written-events dp-commit-raw-data-events; do
+for topic in dp-data-events dp-store-data-events dp-merge-data-events dp-commit-data-events; do
   kafka-topics.sh --create --topic "$topic" \
     --bootstrap-server localhost:9092 \
     --partitions 3 --replication-factor 1
 done
 ```
 
-Create topics
-
-```
-kafka-topics.sh --create --topic dp-data-events --bootstrap-server localhost:9092 --partitions 3 --replication-factor 1
-```
-```
-kafka-topics.sh --create --topic dp-store-data-events --bootstrap-server localhost:9092 --partitions 3 --replication-factor 1
-```
-```
-kafka-topics.sh --create --topic dp-merge-data-events --bootstrap-server localhost:9092 --partitions 3 --replication-factor 1
-```
-```
-kafka-topics.sh --create --topic dp-commit-data-events --bootstrap-server localhost:9092 --partitions 3 --replication-factor 1
-```
-
-
-
-Use enough partitions on `dp-catalog-written-events` for your active event types. Message keys should be `namespace|type` (for example `global|api_events`).
+Use enough partitions on `dp-merge-data-events` for your active event types. Message keys should be `namespace|type` (for example `global|api_events`).
 
 ## Infrastructure deployment steps 
 
@@ -292,10 +275,10 @@ Set AWS credential by environment variables.
 The **events-simulator** module is a lightweight Micronaut app that publishes sample `api_events` to Kafka.
 
 1. Start Kafka locally (ensure `dp-data-events` topic exists).
-2. Run the producer:
+2. Run the simulator:
 
    ```bash
-   mvn -pl events-producer mn:run
+   mvn -pl events-simulator mn:run
    ```
 
 3. **Automatic load (default):** while the simulator is running, it publishes **1000 random events per minute** using fixed test pools (`ACCOUNT-1`…`ACCOUNT-5`, `USER-1`…`USER-5`, and the configured `op_type` values). Configure in `events-simulator/src/main/resources/application.properties`:
@@ -313,13 +296,11 @@ The **events-simulator** module is a lightweight Micronaut app that publishes sa
    curl "http://localhost:8081/events/generate?count=10"
    ```
 
-   The producer runs on port **8081** and publishes to `dp-data-events` with random sample data for the `global` / `api_events` table.
+   The simulator runs on port **8081** and publishes to `dp-data-events` with random sample data for the `global` / `api_events` table.
 
 ### Using Kafka console producer
 
 Publish a single event directly to the `dp-data-events` topic. The message key is typically the tenant ID.
-
-Publish an event to `dp-data-events`:
 
 ```bash
 kafka-console-producer.sh --bootstrap-server localhost:9092 \
@@ -334,7 +315,7 @@ For the `fraud_detection` / `incident_events` table:
 
 ```bash
 kafka-console-producer.sh --bootstrap-server localhost:9092 \
-  --topic dp-raw-events \
+  --topic dp-data-events \
   --property "parse.key=true" \
   --property "key.separator=:" <<'EOF'
 ACCOUNT-1:{"namespace":"fraud_detection","type":"incident_events","tenantId":"ACCOUNT-1","eventTime":"2026-05-30 12:00:00","attributes":{"user_id":"USER-1","source":"web","ipaddress":"10.0.0.1","result":"BLOCKED"}}

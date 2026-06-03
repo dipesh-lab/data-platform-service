@@ -26,7 +26,7 @@ kafka:
 
   streams:
     default:
-      application.id: "${STREAM_APP_NAME}"
+      application.id: "${STREAM_APP_NAME:dp-data-process-app}"
       processing.guarantee: "exactly_once_v2"
       commit.interval.ms: 100
       producer.transaction.timeout.ms: 60000
