@@ -78,4 +78,20 @@ class IngestRawDataServiceImplUnitTest {
         verify(appendFiles).appendFile(any(DataFile.class));
         verify(appendFiles).commit();
     }
+
+    @Test
+    void commitStageFile_appendFailure_isHandled() throws Exception {
+        StoredData staged = new StoredData("global", "api_events", "s3://bucket/data/file.parquet", 5, 512L, null);
+        Table table = org.mockito.Mockito.mock(Table.class);
+        PartitionSpec spec = org.mockito.Mockito.mock(PartitionSpec.class);
+
+        when(cachedCatalogTableRegistry.getTable("global", "api_events")).thenReturn(table);
+        when(table.spec()).thenReturn(spec);
+        when(table.newAppend()).thenThrow(new RuntimeException("append failed"));
+
+        ingestRawDataService.commitStageFile(staged);
+
+        verify(cachedCatalogTableRegistry).getTable("global", "api_events");
+        verify(table).newAppend();
+    }
 }
