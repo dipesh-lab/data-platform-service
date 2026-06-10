@@ -2,6 +2,8 @@
 
 Product teams often build siloed ingest pipelines for each event type, leading to slow time-to-insight, duplicated infrastructure, and inconsistent governance. **Data Platform Service** provides one governed, self-service path: teams publish events and the platform handles ingestion, storage, and catalog registration — making data queryable in tools such as Athena and Metabase within ~5 minutes.
 
+## Why and drivers to create this application
+
 ![Data Platform Architecture](docs/data-platform-ce-overview.png)
 
 ## High level flow diagram
@@ -13,6 +15,8 @@ A multi-module Maven application that ingests product data events from Kafka, bu
 ## Visualize data using Metabase
 
 #### Display simulated api_events
+
+![Data Platform Architecture](docs/api-events-stats.png)
 
 ### Storage and catalog
 
@@ -102,10 +106,10 @@ Typical end-to-end latency from event ingest to Athena queryability is **~5 minu
 
 | Module               | Description |
 |----------------------|-------------|
-| **events-simulator** | Micronaut HTTP service for local and test use. Exposes `/events/generate` to publish sample events to the `dp-data-events` Kafka topic. |
 | **events-processor** | Core ingestion service. Runs two Kafka Streams topologies (event grouping and pre-commit merge), stages Parquet on S3, merges staged files before catalog commit, and registers data in Iceberg through AWS Glue. |
 | **serverless**       | AWS Lambda functions and Terraform for deploying catalog-management workloads. The `apply-catalog-schema` Lambda reads schema files from `catalog-data` and creates or updates Glue/Iceberg tables. |
 | **infrastructure**   | Terraform for shared AWS resources: S3 data buckets (derived from `catalog-data`), Glue catalog IAM roles, and Athena query workgroups. |
+| **events-simulator** | Micronaut HTTP service for local and test use. Exposes `/events/generate` to publish sample events to the `dp-data-events` Kafka topic. |
 
 ## Catalog data — onboarding product events
 
